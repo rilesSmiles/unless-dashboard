@@ -31,10 +31,11 @@ export default function Signup() {
     // Create profile row
     if (data.user) {
       await supabase.from('profiles').insert({
-        id: data.user.id,
-        name: name,
-        role: 'client', 
-      })
+      id: data.user.id,
+      name: name,
+      email: email,
+      role: 'client',
+})
     }
 
     setLoading(false)
