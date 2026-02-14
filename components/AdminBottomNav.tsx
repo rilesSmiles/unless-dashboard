@@ -5,11 +5,11 @@ import { usePathname } from 'next/navigation'
 
 const navItems = [
   { name: 'Home', href: '/dashboard/admin' },
-  { name: 'Projects', href: '/dashboard/admin/projects' },
-  { name: 'Invoices', href: '/dashboard/admin/invoices' },
-  { name: 'Accounts', href: '/dashboard/admin/accounts' },
-  { name: 'Templates', href: '/dashboard/admin/templates' },
-  { name: 'Profile', href: '/dashboard/admin/profile' },
+  { name: 'Projects', href: '/app/dashboard/admin/projects' },
+  { name: 'Invoices', href: '/app/dashboard/admin/invoices' },
+  { name: 'Accounts', href: '/app/dashboard/admin/accounts' },
+  { name: 'Templates', href: '/app/dashboard/admin/templates' },
+  { name: 'Profile', href: '/app/dashboard/admin/profile' },
 ]
 
 export default function AdminBottomNav() {
