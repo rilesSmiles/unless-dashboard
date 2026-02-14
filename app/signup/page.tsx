@@ -68,7 +68,7 @@ export default function Signup() {
           type="text"
           placeholder="Business Name"
           className="w-full border rounded p-2"
-          value={name}
+          value={business_name}
           onChange={(e) => setBusiness(e.target.value)}
         />
 
