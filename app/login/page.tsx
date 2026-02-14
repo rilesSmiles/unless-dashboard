@@ -53,9 +53,9 @@ export default function Login() {
 
       // 4️⃣ Redirect by role
       if (profile.role === 'admin') {
-        router.push('/admin/dashboard')
+        router.push('/dashboard/admin')
       } else {
-        router.push('/client/dashboard')
+        router.push('/dashoard/client')
       }
 
     } catch (err: any) {
