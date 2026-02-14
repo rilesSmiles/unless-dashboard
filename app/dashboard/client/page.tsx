@@ -8,7 +8,7 @@ export default function ClientDashboard() {
   const router = useRouter()
 
   const [name, setName] = useState('')
-  const [business_name, setBusiness] = useState('')
+  const [business_name, setBusiness] = useState(true)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
