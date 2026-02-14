@@ -67,7 +67,7 @@ export default function Login() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
-      <div className="w-96 rounded-xl bg-white p-6 shadow space-y-4">
+      <div className="w-96 rounded-xl bg-edeae7 p-6 shadow space-y-4">
 
         <h1 className="text-2xl font-bold text-center">
           Welcome Back!
