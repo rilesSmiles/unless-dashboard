@@ -52,8 +52,8 @@ export default function ClientDashboard() {
         setName(profile.name || 'Client')
         setLoading(false)
 
-        setBusiness(profile.business_name || 'Business Name')
-        setLoading(false)
+        //setBusiness(profile.business_name || 'Business Name')
+        //setLoading(false)
 
       } catch (err: any) {
         console.error(err)
