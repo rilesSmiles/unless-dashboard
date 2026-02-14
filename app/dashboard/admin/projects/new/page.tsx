@@ -72,10 +72,12 @@ export default function NewProject() {
     setLoading(true)
     setError(null)
 
-    try {
-      if (!name || !clientId || !deliveryTypeId) {
-        throw new Error('Please fill in all fields')
-      }
+   try {
+  console.log({ name, clientId, deliveryTypeId })
+
+  if (!name || !clientId || !deliveryTypeId) {
+    throw new Error('Please fill in all fields')
+  }
 
       // 1️⃣ Create project
       const { data: project, error: projectError } =
