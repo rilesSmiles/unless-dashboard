@@ -53,7 +53,7 @@ export default function ClientDashboard() {
         setLoading(false)
 
         setBusiness(profile.business_name || 'Client')
-        setLoading(true)
+        setLoading(false)
 
       } catch (err: any) {
         console.error(err)
