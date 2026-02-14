@@ -52,7 +52,7 @@ export default function ClientDashboard() {
         setName(profile.name || 'Client')
         setLoading(false)
 
-       setBusiness(profile.business_name || 'Business')
+       setBusiness(profile.business_name || 'Client')
        setLoading(false)
 
       } catch (err: any) {
