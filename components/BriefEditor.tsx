@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import EditorJS from '@editorjs/editorjs'
+import { supabase } from '@/lib/supabase'
+
 import Header from '@editorjs/header'
 import List from '@editorjs/list'
 import Paragraph from '@editorjs/paragraph'
-import { supabase } from '@/lib/supabase'
 
 type Props = {
   projectId: string
@@ -16,63 +16,74 @@ export default function BriefEditor({
   projectId,
   initialData,
 }: Props) {
-  const editorRef = useRef<EditorJS | null>(null)
-  const holderRef = useRef<HTMLDivElement>(null)
+  const editorRef = useRef<any>(null)
+  const [mounted, setMounted] = useState(false)
 
-  const [saving, setSaving] = useState(false)
-
+  /* Make sure we're on client */
   useEffect(() => {
-    if (!holderRef.current) return
+    setMounted(true)
+  }, [])
 
+  /* Init editor */
+  useEffect(() => {
+    if (!mounted) return
     if (editorRef.current) return
 
-    const editor = new EditorJS({
-      holder: holderRef.current,
-      data: initialData || undefined,
+    let editor: any
 
-      tools: {
-        header: Header,
-        list: List,
-        paragraph: Paragraph,
-      },
+    const init = async () => {
+      const EditorJS = (await import('@editorjs/editorjs')).default
 
-      autofocus: true,
+      editor = new EditorJS({
+        holder: 'editorjs',
 
-      async onChange() {
-        const content = await editor.save()
+        data:
+          initialData && Object.keys(initialData).length > 0
+            ? initialData
+            : { blocks: [] },
 
-        setSaving(true)
+        tools: {
+          header: Header,
+          list: List,
+          paragraph: Paragraph,
+        },
 
-        await supabase
-          .from('projects')
-          .update({
-            brief_content: content,
-          })
-          .eq('id', projectId)
+        async onChange() {
+          const data = await editor.save()
 
-        setSaving(false)
-      },
-    })
+          await supabase
+            .from('projects')
+            .update({
+              brief_content: data,
+            })
+            .eq('id', projectId)
+        },
+      })
 
-    editorRef.current = editor
+      editorRef.current = editor
+    }
+
+    init()
 
     return () => {
-      editor.destroy()
-      editorRef.current = null
+      if (editorRef.current?.destroy) {
+        editorRef.current.destroy()
+        editorRef.current = null
+      }
     }
-  }, [projectId, initialData])
+  }, [mounted, projectId, initialData])
+
+  if (!mounted) {
+    return (
+      <p className="text-sm text-gray-400">
+        Loading editor…
+      </p>
+    )
+  }
 
   return (
-    <div className="space-y-2">
-
-      <div
-        ref={holderRef}
-        className="border rounded-lg p-3 min-h-[200px] bg-white"
-      />
-
-      <p className="text-xs text-gray-400">
-        {saving ? 'Saving…' : 'Autosaved'}
-      </p>
+    <div className="border rounded p-3 min-h-[250px] bg-white">
+      <div id="editorjs" />
     </div>
   )
 }
