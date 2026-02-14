@@ -47,7 +47,7 @@ export default function Signup() {
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-96 rounded-xl bg-white p-6 shadow space-y-4">
         <h1 className="text-2xl font-bold text-center">
-          Create Account
+          Create an Account with Unless
         </h1>
 
         {error && (
@@ -62,6 +62,14 @@ export default function Signup() {
           className="w-full border rounded p-2"
           value={name}
           onChange={(e) => setName(e.target.value)}
+        />
+
+        <input
+          type="text"
+          placeholder="Business Name"
+          className="w-full border rounded p-2"
+          value={name}
+          onChange={(e) => setBusiness(e.target.value)}
         />
 
         <input
