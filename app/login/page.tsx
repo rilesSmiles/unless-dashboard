@@ -70,7 +70,7 @@ export default function Login() {
       <div className="w-96 rounded-xl bg-white p-6 shadow space-y-4">
 
         <h1 className="text-2xl font-bold text-center">
-          Log In
+          Welcome Back!
         </h1>
 
         {error && (
