@@ -6,36 +6,83 @@ import { useRouter } from 'next/navigation'
 
 export default function AdminDashboard() {
   const router = useRouter()
+
   const [name, setName] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const loadAdmin = async () => {
-      const { data: { user } } = await supabase.auth.getUser()
+      try {
+        // 1️⃣ Get user
+        const {
+          data: { user },
+          error: userError,
+        } = await supabase.auth.getUser()
 
-      if (!user) {
-        router.push('/login')
-        return
+        if (userError) throw userError
+
+        if (!user) {
+          router.push('/login')
+          return
+        }
+
+        // 2️⃣ Get profile
+        const { data: profile, error: profileError } =
+          await supabase
+            .from('profiles')
+            .select('name, role')
+            .eq('id', user.id)
+            .single()
+
+        if (profileError) throw profileError
+
+        if (!profile) {
+          throw new Error('Profile not found')
+        }
+
+        // 3️⃣ Check role
+        if (profile.role !== 'admin') {
+          router.push('/dashboard/client')
+          return
+        }
+
+        // 4️⃣ Set state
+        setName(profile.name || 'Admin')
+        setLoading(false)
+
+      } catch (err: any) {
+        console.error(err)
+        setError(err.message || 'Something went wrong')
+        setLoading(false)
       }
-
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('name, role')
-        .eq('id', user.id)
-        .single()
-
-      if (profile?.role !== 'admin') {
-        router.push('/dashboard/client')
-        return
-      }
-
-      setName(profile.name)
     }
 
     loadAdmin()
   }, [router])
 
+  // ⏳ Loading state
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p>Loading dashboard…</p>
+      </div>
+    )
+  }
+
+  // ❌ Error state
+  if (error) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-red-500">
+        {error}
+      </div>
+    )
+  }
+
+  // ✅ Dashboard
   return (
     <div className="p-8">
+
       <h1 className="text-3xl font-bold">
         Admin Dashboard
       </h1>
@@ -48,6 +95,7 @@ export default function AdminDashboard() {
         <p>🚀 Unless HQ Control Panel</p>
         <p>Clients, revenue, projects coming soon…</p>
       </div>
+
     </div>
   )
 }

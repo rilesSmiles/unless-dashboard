@@ -16,24 +16,59 @@ export default function Login() {
     setLoading(true)
     setError(null)
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
+    try {
+      // 1️⃣ Sign in
+      const { data: loginData, error: loginError } =
+        await supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
 
-    if (error) {
-      setError(error.message)
+      if (loginError) {
+        throw loginError
+      }
+
+      // 2️⃣ Get logged-in user
+      const user = loginData.user
+
+      if (!user) {
+        throw new Error('User not found after login')
+      }
+
+      // 3️⃣ Get profile
+      const { data: profile, error: profileError } =
+        await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .single()
+
+      if (profileError) {
+        throw profileError
+      }
+
+      if (!profile) {
+        throw new Error('Profile not found')
+      }
+
+      // 4️⃣ Redirect by role
+      if (profile.role === 'admin') {
+        router.push('/admin/dashboard')
+      } else {
+        router.push('/client/dashboard')
+      }
+
+    } catch (err: any) {
+      console.error(err)
+      setError(err.message || 'Something went wrong')
       setLoading(false)
-      return
     }
-
-    // ✅ SUCCESS → go to dashboard
-    router.push('/dashboard')
   }
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-100">
       <div className="w-96 rounded-xl bg-white p-6 shadow space-y-4">
+
         <h1 className="text-2xl font-bold text-center">
           Log In
         </h1>
@@ -63,7 +98,7 @@ export default function Login() {
         <button
           onClick={handleLogin}
           disabled={loading}
-          className="w-full bg-black text-white py-2 rounded hover:opacity-90"
+          className="w-full bg-black text-white py-2 rounded hover:opacity-90 disabled:opacity-50"
         >
           {loading ? 'Logging in...' : 'Log In'}
         </button>
@@ -74,6 +109,7 @@ export default function Login() {
             Sign up
           </a>
         </p>
+
       </div>
     </div>
   )
