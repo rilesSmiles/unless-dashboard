@@ -22,6 +22,9 @@ export default function AdminProjectPage() {
   const [project, setProject] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
+  const [todos, setTodos] = useState<any[]>([])
+  const [newTodo, setNewTodo] = useState('')
+
   useEffect(() => {
     const loadProject = async () => {
       const { data, error } = await supabase
@@ -54,6 +57,7 @@ export default function AdminProjectPage() {
     loadProject()
   }, [projectId])
 
+
   if (loading) return <p className="p-8">Loading…</p>
   if (!project) return <p className="p-8">Project not found</p>
 
@@ -69,6 +73,22 @@ export default function AdminProjectPage() {
   return (
     <div className="p-8 space-y-6">
       <h1 className="text-3xl font-bold">{project.name}</h1>
+
+<div className="border rounded-xl p-4">
+  <h3 className="font-semibold mb-2">Project Brief</h3>
+
+  {project.brief_url ? (
+    <a
+      href={project.brief_url}
+      target="_blank"
+      className="underline"
+    >
+      Open Brief
+    </a>
+  ) : (
+    <p className="text-gray-400">No brief added</p>
+  )}
+</div>
 
       {/* Progress bar */}
       <div>
