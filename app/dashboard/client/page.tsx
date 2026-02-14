@@ -32,7 +32,7 @@ export default function ClientDashboard() {
         const { data: profile, error: profileError } =
           await supabase
             .from('profiles')
-            .select('name, role')
+            .select('name, role, business_name')
             .eq('id', user.id)
             .single()
 
@@ -52,7 +52,8 @@ export default function ClientDashboard() {
         setName(profile.name || 'Client')
         setLoading(false)
 
-
+        setBusiness(profile.business_name || 'Client')
+        setLoading(false)
 
       } catch (err: any) {
         console.error(err)
