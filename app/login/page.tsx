@@ -55,7 +55,7 @@ export default function Login() {
       if (profile.role === 'admin') {
         router.push('/dashboard/admin')
       } else {
-        router.push('/dashoard/client')
+        router.push('/dashboard/client')
       }
 
     } catch (err: any) {
