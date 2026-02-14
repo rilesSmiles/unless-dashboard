@@ -8,6 +8,7 @@ export default function ClientDashboard() {
   const router = useRouter()
 
   const [name, setName] = useState('')
+    const [business_name, setBusiness] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -51,6 +52,8 @@ export default function ClientDashboard() {
         setName(profile.name || 'Client')
         setLoading(false)
 
+
+
       } catch (err: any) {
         console.error(err)
         setError(err.message || 'Something went wrong')
@@ -84,7 +87,7 @@ export default function ClientDashboard() {
     <div className="p-8">
 
       <h1 className="text-3xl font-bold">
-        Client Dashboard
+        {business_name} Dashboard
       </h1>
 
       <p className="mt-2 text-gray-600">
