@@ -23,6 +23,10 @@ export default function ProjectGrid({
           </h3>
 
           <p className="text-sm text-gray-500 mt-1">
+            {project.business_name || 'Unknown Client'}
+          </p>
+
+          <p className="text-sm text-gray-500 mt-1">
             {project.project_type || 'No type'}
           </p>
 

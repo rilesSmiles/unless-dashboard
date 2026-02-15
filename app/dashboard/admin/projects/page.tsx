@@ -11,12 +11,17 @@ import ProjectGrid from '@/components/ProjectGrid'
 import ProjectFilters from '@/components/ProjectFilters'
 import RecentProjects from '@/components/RecentProjects'
 
+
+// ✅ Updated Project Type (with profiles join)
 export type Project = {
   id: string
   name: string
   project_type: string | null
   created_at: string
   last_viewed_at: string | null
+  client_id: string
+
+  business_name: string | null
 }
 
 export default function ProjectsPage() {
@@ -30,24 +35,56 @@ export default function ProjectsPage() {
   /* ----------------------------
      Load Projects
   -----------------------------*/
-  useEffect(() => {
-    const loadProjects = async () => {
-      const { data, error } = await supabase
-        .from('projects')
-        .select('*')
-        .order('created_at', { ascending: false })
+useEffect(() => {
+  const loadProjects = async () => {
+    const { data, error } = await supabase
+      .from('projects')
+      .select(`
+        id,
+        name,
+        project_type,
+        created_at,
+        last_viewed_at,
+        client_id,
+        profiles (
+          business_name
+        )
+      `)
+      .order('created_at', { ascending: false })
 
-      if (error) {
-        console.error('Load projects error:', error)
-        return
-      }
-
-      setProjects(data || [])
+    if (error) {
+      console.error('Load projects error:', error)
       setLoading(false)
+      return
     }
 
-    loadProjects()
-  }, [])
+    if (!data) {
+      setProjects([])
+      setLoading(false)
+      return
+    }
+
+    /* ✅ Format Supabase join result */
+    const formatted: Project[] = data.map(
+      (project: any) => ({
+        id: project.id,
+        name: project.name,
+        project_type: project.project_type,
+        created_at: project.created_at,
+        last_viewed_at: project.last_viewed_at,
+        client_id: project.client_id,
+
+        business_name:
+          project.profiles?.[0]?.business_name ?? null,
+      })
+    )
+
+    setProjects(formatted)
+    setLoading(false)
+  }
+
+  loadProjects()
+}, [])
 
   /* ----------------------------
      Filtering
