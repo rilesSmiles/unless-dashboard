@@ -37,6 +37,17 @@ export default function ProjectsPage() {
   -----------------------------*/
 useEffect(() => {
   const loadProjects = async () => {
+
+    /* ✅ Ensure session is ready */
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
+
+    if (!session) {
+      console.warn('No session yet — retrying...')
+      return
+    }
+
     const { data, error } = await supabase
       .from('projects')
       .select(`
@@ -64,26 +75,36 @@ useEffect(() => {
       return
     }
 
-    /* ✅ Format Supabase join result */
-    const formatted: Project[] = data.map(
-      (project: any) => ({
-        id: project.id,
-        name: project.name,
-        project_type: project.project_type,
-        created_at: project.created_at,
-        last_viewed_at: project.last_viewed_at,
-        client_id: project.client_id,
+    /* ✅ Normalize join */
+    const formatted = data.map((project: any) => ({
+      id: project.id,
+      name: project.name,
+      project_type: project.project_type,
+      created_at: project.created_at,
+      last_viewed_at: project.last_viewed_at,
+      client_id: project.client_id,
 
-        business_name:
-          project.profiles?.[0]?.business_name ?? null,
-      })
-    )
+      business_name:
+        project.profiles?.[0]?.business_name ?? null,
+    }))
 
     setProjects(formatted)
     setLoading(false)
   }
 
   loadProjects()
+
+  /* ✅ Re-run if auth changes */
+  const {
+    data: listener,
+  } = supabase.auth.onAuthStateChange(() => {
+    loadProjects()
+  })
+
+  return () => {
+    listener.subscription.unsubscribe()
+  }
+
 }, [])
 
   /* ----------------------------
