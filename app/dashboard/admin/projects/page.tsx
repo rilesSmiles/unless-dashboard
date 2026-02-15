@@ -36,77 +36,96 @@ export default function ProjectsPage() {
      Load Projects
   -----------------------------*/
 useEffect(() => {
-  const loadProjects = async () => {
+  let mounted = true
 
-    /* ✅ Ensure session is ready */
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
+  const loadProjects = async (retry = false) => {
+    try {
+      setLoading(true)
 
-    if (!session) {
-      console.warn('No session yet — retrying...')
-      return
-    }
+      /* 🔁 Force session refresh */
+      const {
+        data: { session },
+        error: sessionError,
+      } = await supabase.auth.getSession()
 
-    const { data, error } = await supabase
-      .from('projects')
-      .select(`
-        id,
-        name,
-        project_type,
-        created_at,
-        last_viewed_at,
-        client_id,
-        profiles (
-          business_name
-        )
-      `)
-      .order('created_at', { ascending: false })
+      if (sessionError) {
+        throw sessionError
+      }
 
-    if (error) {
-      console.error('Load projects error:', error)
+      if (!session) {
+        console.warn('No session — waiting...')
+        setLoading(false)
+        return
+      }
+
+      const { data, error } = await supabase
+        .from('projects')
+        .select(`
+          id,
+          name,
+          project_type,
+          created_at,
+          last_viewed_at,
+          client_id,
+          profiles (
+            business_name
+          )
+        `)
+        .order('created_at', { ascending: false })
+
+      if (error) {
+        throw error
+      }
+
+      if (!mounted) return
+
+      const formatted: Project[] = (data || []).map(
+        (project: any) => ({
+          id: project.id,
+          name: project.name,
+          project_type: project.project_type,
+          created_at: project.created_at,
+          last_viewed_at: project.last_viewed_at,
+          client_id: project.client_id,
+
+          business_name:
+            project.profiles?.[0]?.business_name ?? null,
+        })
+      )
+
+      setProjects(formatted)
       setLoading(false)
-      return
-    }
 
-    if (!data) {
-      setProjects([])
+    } catch (err: any) {
+      console.error('Load projects error:', err)
+
+      /* 🔁 One automatic retry */
+      if (!retry) {
+        console.warn('Retrying project load...')
+        setTimeout(() => {
+          loadProjects(true)
+        }, 500)
+        return
+      }
+
       setLoading(false)
-      return
     }
-
-    /* ✅ Normalize join */
-    const formatted = data.map((project: any) => ({
-      id: project.id,
-      name: project.name,
-      project_type: project.project_type,
-      created_at: project.created_at,
-      last_viewed_at: project.last_viewed_at,
-      client_id: project.client_id,
-
-      business_name:
-        project.profiles?.[0]?.business_name ?? null,
-    }))
-
-    setProjects(formatted)
-    setLoading(false)
   }
 
   loadProjects()
 
-  /* ✅ Re-run if auth changes */
-  const {
-    data: listener,
-  } = supabase.auth.onAuthStateChange(() => {
+  /* 🔄 Reload on tab restore / back nav */
+  const onFocus = () => {
     loadProjects()
-  })
-
-  return () => {
-    listener.subscription.unsubscribe()
   }
 
-}, [])
+  window.addEventListener('focus', onFocus)
 
+  return () => {
+    mounted = false
+    window.removeEventListener('focus', onFocus)
+  }
+}, [])
   /* ----------------------------
      Filtering
   -----------------------------*/
