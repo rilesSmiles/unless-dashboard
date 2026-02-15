@@ -39,20 +39,12 @@ export default function ProjectsPage() {
     const loadProjects = async () => {
       setLoading(true)
 
-      const { data, error } = await supabase
-        .from('projects')
-        .select(`
-          id,
-          name,
-          project_type,
-          created_at,
-          last_viewed_at,
-          client_id,
-          profiles:client_id (
-            business_name
-          )
-        `)
-        .order('created_at', { ascending: false })
+const { data, error } = await supabase
+  .from('projects')
+  .select('*')  // Just get everything, no join
+  .order('created_at', { ascending: false })
+
+console.log('Raw response:', { data, error })
 
       if (error) {
         console.error('Load projects error:', error)
