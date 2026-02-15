@@ -11,8 +11,9 @@ import ProjectGrid from '@/components/ProjectGrid'
 import ProjectFilters from '@/components/ProjectFilters'
 import RecentProjects from '@/components/RecentProjects'
 
-
-// ✅ Updated Project Type (with profiles join)
+/* ----------------------------
+   Types
+-----------------------------*/
 export type Project = {
   id: string
   name: string
@@ -20,7 +21,6 @@ export type Project = {
   created_at: string
   last_viewed_at: string | null
   client_id: string
-
   business_name: string | null
 }
 
@@ -35,28 +35,9 @@ export default function ProjectsPage() {
   /* ----------------------------
      Load Projects
   -----------------------------*/
-useEffect(() => {
-  let mounted = true
-
-  const loadProjects = async (retry = false) => {
-    try {
+  useEffect(() => {
+    const loadProjects = async () => {
       setLoading(true)
-
-      /* 🔁 Force session refresh */
-      const {
-        data: { session },
-        error: sessionError,
-      } = await supabase.auth.getSession()
-
-      if (sessionError) {
-        throw sessionError
-      }
-
-      if (!session) {
-        console.warn('No session — waiting...')
-        setLoading(false)
-        return
-      }
 
       const { data, error } = await supabase
         .from('projects')
@@ -67,17 +48,17 @@ useEffect(() => {
           created_at,
           last_viewed_at,
           client_id,
-          profiles (
+          profiles:client_id (
             business_name
           )
         `)
         .order('created_at', { ascending: false })
 
       if (error) {
-        throw error
+        console.error('Load projects error:', error)
+        setLoading(false)
+        return
       }
-
-      if (!mounted) return
 
       const formatted: Project[] = (data || []).map(
         (project: any) => ({
@@ -88,44 +69,19 @@ useEffect(() => {
           last_viewed_at: project.last_viewed_at,
           client_id: project.client_id,
 
+          // 👇 IMPORTANT: single object, not array
           business_name:
-            project.profiles?.[0]?.business_name ?? null,
+            project.profiles?.business_name ?? null,
         })
       )
 
       setProjects(formatted)
       setLoading(false)
-
-    } catch (err: any) {
-      console.error('Load projects error:', err)
-
-      /* 🔁 One automatic retry */
-      if (!retry) {
-        console.warn('Retrying project load...')
-        setTimeout(() => {
-          loadProjects(true)
-        }, 500)
-        return
-      }
-
-      setLoading(false)
     }
-  }
 
-  loadProjects()
-
-  /* 🔄 Reload on tab restore / back nav */
-  const onFocus = () => {
     loadProjects()
-  }
+  }, [])
 
-  window.addEventListener('focus', onFocus)
-
-  return () => {
-    mounted = false
-    window.removeEventListener('focus', onFocus)
-  }
-}, [])
   /* ----------------------------
      Filtering
   -----------------------------*/
@@ -140,7 +96,6 @@ useEffect(() => {
      Open Project
   -----------------------------*/
   const openProject = async (id: string) => {
-    // Update last viewed (optional but sexy)
     await supabase
       .from('projects')
       .update({
@@ -151,10 +106,20 @@ useEffect(() => {
     router.push(`/dashboard/admin/projects/${id}`)
   }
 
+  /* ----------------------------
+     Loading State
+  -----------------------------*/
   if (loading) {
-    return <p className="p-8">Loading…</p>
+    return (
+      <p className="p-8 text-neutral-400">
+        Loading projects…
+      </p>
+    )
   }
 
+  /* ----------------------------
+     UI
+  -----------------------------*/
   return (
     <div className="p-8 max-w-[1600px] mx-auto">
 
