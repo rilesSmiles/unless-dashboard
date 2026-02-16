@@ -132,31 +132,32 @@ export default function AdminInvoiceDetailPage() {
   }
 
   const deleteInvoice = async () => {
-    if (!invoice) return
+  if (!invoice) return
 
-    const confirmText = prompt(
-      `Type DELETE to permanently delete invoice ${invoice.invoice_number ?? ''}`
-    )
+  const confirmText = prompt(
+    `Type DELETE to permanently delete invoice ${invoice.invoice_number ?? ''}`
+  )
 
-    if (confirmText !== 'DELETE') return
+  if (confirmText !== 'DELETE') return
 
-    setDeleting(true)
+  setDeleting(true)
 
-    const { error } = await supabase
-      .from('invoices')
-      .delete()
-      .eq('id', invoice.id)
+  const { error } = await supabase
+    .from('invoices')
+    .delete()
+    .eq('id', invoice.id)
+    .select() // 👈 important for catching RLS errors properly
 
-    setDeleting(false)
+  setDeleting(false)
 
-    if (error) {
-      alert('Failed to delete invoice')
-      console.error(error)
-      return
-    }
-
-    router.push('/dashboard/admin/invoices')
+  if (error) {
+    alert('Failed to delete invoice')
+    console.error('Delete error:', error)
+    return
   }
+
+  router.push('/dashboard/admin/invoices')
+}
 
   if (loading) return <p className="p-8">Loading…</p>
   if (!invoice) return <p className="p-8">Invoice not found</p>
