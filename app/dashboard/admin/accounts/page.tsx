@@ -16,6 +16,17 @@ type Client = {
   role: string | null
 }
 
+type Contact = {
+  id: string
+  client_id: string
+  name: string | null
+  position: string | null
+  email: string | null
+  phone: string | null
+  is_primary: boolean
+  created_at: string
+}
+
 type Project = {
   id: string
   name: string
@@ -38,6 +49,7 @@ export default function AccountsPage() {
   const router = useRouter()
 
   const [clients, setClients] = useState<Client[]>([])
+  const [contacts, setContacts] = useState<Contact[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
@@ -54,6 +66,15 @@ export default function AccountsPage() {
 
       if (clientErr) console.error('Load clients error:', clientErr)
 
+      // 1.5) Contacts
+      const { data: contactData, error: contactErr } = await supabase
+        .from('client_contacts')
+        .select('id, client_id, name, position, email, phone, is_primary, created_at')
+        .order('is_primary', { ascending: false })
+        .order('created_at', { ascending: true })
+
+      if (contactErr) console.error('Load contacts error:', contactErr)
+
       // 2) Projects
       const { data: projectData, error: projectErr } = await supabase
   .from('projects')
@@ -61,9 +82,9 @@ export default function AccountsPage() {
   .order('created_at', { ascending: false })
 
       if (projectErr) {
-  console.error('Load projects error:', projectErr)
-  console.error('Load projects error JSON:', JSON.stringify(projectErr))
-}
+        console.error('Load projects error:', projectErr)
+        console.error('Load projects error JSON:', JSON.stringify(projectErr))
+      }
 
       // 3) Invoices (only outstanding)
       const { data: invoiceData, error: invoiceErr } = await supabase
@@ -75,6 +96,7 @@ export default function AccountsPage() {
       if (invoiceErr) console.error('Load invoices error:', invoiceErr)
 
       setClients((clientData || []) as Client[])
+      setContacts((contactData || []) as Contact[])
       setProjects((projectData || []) as Project[])
       setInvoices((invoiceData || []) as Invoice[])
       setLoading(false)
@@ -84,12 +106,21 @@ export default function AccountsPage() {
   }, [])
 
   const clientsOnly = useMemo(() => {
-    // If you use roles: filter to clients (otherwise remove this filter)
     const list = clients.filter((c) => (c.role ?? 'client') === 'client')
-
-    // If you have clients without role set yet, they’d get filtered out—this keeps them
     return list.length ? list : clients
   }, [clients])
+
+  // ✅ Step 3 grouping: contactsByClient (MOVED OUTSIDE useEffect)
+  const contactsByClient = useMemo(() => {
+    const map = new Map<string, Contact[]>()
+    for (const c of contacts) {
+      if (!c.client_id) continue
+      const arr = map.get(c.client_id) ?? []
+      arr.push(c)
+      map.set(c.client_id, arr)
+    }
+    return map
+  }, [contacts])
 
   const projectsByClient = useMemo(() => {
     const map = new Map<string, Project[]>()
@@ -143,6 +174,11 @@ export default function AccountsPage() {
             const clientProjects = projectsByClient.get(c.id) ?? []
             const clientInvoices = invoicesByClient.get(c.id) ?? []
 
+            // ✅ Primary contact (or first contact)
+            const clientContacts = contactsByClient.get(c.id) ?? []
+            const primary =
+              clientContacts.find((x) => x.is_primary) ?? clientContacts[0] ?? null
+
             return (
               <div
                 key={c.id}
@@ -154,9 +190,10 @@ export default function AccountsPage() {
                     <h2 className="text-lg font-semibold text-white">
                       {c.business_name ?? 'Client'}
                     </h2>
+
                     <p className="text-sm text-neutral-400">
-                      {c.name ?? '—'}
-                      {c.position ? ` • ${c.position}` : ''}
+                      {primary?.name ?? c.name ?? '—'}
+                      {(primary?.position ?? c.position) ? ` • ${primary?.position ?? c.position}` : ''}
                     </p>
                   </div>
 
@@ -168,13 +205,36 @@ export default function AccountsPage() {
                   </button>
                 </div>
 
-                {/* Contact */}
+                {/* Contact (shows primary contact info first, falls back to profiles fields) */}
                 <div className="text-sm text-neutral-300 space-y-1">
-                  {c.email && <p>Email: <span className="text-neutral-200">{c.email}</span></p>}
-                  {c.phone && <p>Phone: <span className="text-neutral-200">{c.phone}</span></p>}
+                  {(primary?.email ?? c.email) && (
+                    <p>
+                      Email:{' '}
+                      <span className="text-neutral-200">
+                        {primary?.email ?? c.email}
+                      </span>
+                    </p>
+                  )}
+
+                  {(primary?.phone ?? c.phone) && (
+                    <p>
+                      Phone:{' '}
+                      <span className="text-neutral-200">
+                        {primary?.phone ?? c.phone}
+                      </span>
+                    </p>
+                  )}
+
                   {c.address && (
                     <p className="whitespace-pre-line">
                       Address: <span className="text-neutral-200">{c.address}</span>
+                    </p>
+                  )}
+
+                  {/* tiny hint if multiple contacts */}
+                  {clientContacts.length > 1 && (
+                    <p className="text-xs text-neutral-500 pt-1">
+                      + {clientContacts.length - 1} more contact{clientContacts.length - 1 === 1 ? '' : 's'}
                     </p>
                   )}
                 </div>
