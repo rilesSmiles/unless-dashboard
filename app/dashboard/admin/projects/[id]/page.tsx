@@ -80,6 +80,7 @@ export default function AdminProjectPage() {
 
   const [todos, setTodos] = useState<Todo[]>([])
   const [newTodo, setNewTodo] = useState('')
+  const [deletingTodoId, setDeletingTodoId] = useState<string | null>(null)
 
   const [deleting, setDeleting] = useState(false)
 
@@ -101,6 +102,215 @@ export default function AdminProjectPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [pickedFileName, setPickedFileName] = useState<string | null>(null)
 
+  const [uploadingDoc, setUploadingDoc] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+
+    // 🧩 thumbnail cache (docId -> signed url)
+  const [docThumbs, setDocThumbs] = useState<Record<string, string>>({})
+
+    // 👀 preview state
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [previewDoc, setPreviewDoc] = useState<ProjectDoc | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+
+  const deleteDoc = async (doc: ProjectDoc) => {
+  const ok = confirm(`Delete "${doc.title}"?`)
+  if (!ok) return
+
+  // 1️⃣ delete storage file if exists
+  if (doc.storage_path) {
+    await supabase.storage
+      .from('project-files')
+      .remove([doc.storage_path])
+  }
+
+  // 2️⃣ delete database row
+  const { error } = await supabase
+    .from('project_documents')
+    .delete()
+    .eq('id', doc.id)
+
+  if (error) {
+    console.error('Delete doc error:', error)
+    return
+  }
+
+  // 3️⃣ update UI
+  setDocs((prev) => prev.filter((d) => d.id !== doc.id))
+  setDocThumbs((prev) => {
+    const copy = { ...prev }
+    delete copy[doc.id]
+    return copy
+  })
+}
+
+  const normalizeEmbedUrl = (url: string) => {
+    // Google Docs/Sheets/Slides: /edit -> /preview
+    try {
+      const u = new URL(url)
+
+      // Google Docs / Sheets / Slides
+      if (u.hostname.includes('docs.google.com')) {
+        // common patterns: .../edit, .../view, .../copy
+        u.pathname = u.pathname.replace(/\/(edit|view|copy).*$/, '/preview')
+        return u.toString()
+      }
+
+      // Google Drive file share: force "preview"
+      if (u.hostname.includes('drive.google.com')) {
+        // /file/d/<id>/view -> /file/d/<id>/preview
+        u.pathname = u.pathname.replace(/\/view.*$/, '/preview')
+        return u.toString()
+      }
+
+      // Figma: use embed endpoint if it's a normal file link
+      if (u.hostname.includes('figma.com')) {
+        // if already embed, leave it
+        if (u.pathname.startsWith('/embed')) return u.toString()
+        return `https://www.figma.com/embed?embed_host=share&url=${encodeURIComponent(url)}`
+      }
+
+      return url
+    } catch {
+      return url
+    }
+  }
+
+  const isProbablyImage = (doc: ProjectDoc) => {
+    const t = (doc.file_type || '').toLowerCase()
+    return t.startsWith('image/') || ['.png', '.jpg', '.jpeg', '.webp', '.gif'].some((x) => t.includes(x))
+  }
+
+  const isProbablyPdf = (doc: ProjectDoc) => {
+    const t = (doc.file_type || '').toLowerCase()
+    return t.includes('pdf') || t.includes('.pdf')
+  }
+
+  const closePreview = () => {
+    setPreviewOpen(false)
+    setPreviewDoc(null)
+    setPreviewUrl(null)
+    setPreviewError(null)
+    setPreviewLoading(false)
+  }
+
+  const openPreview = async (doc: ProjectDoc) => {
+    setPreviewOpen(true)
+    setPreviewDoc(doc)
+    setPreviewUrl(null)
+    setPreviewError(null)
+    setPreviewLoading(true)
+
+    try {
+      // Link-based docs
+      if (doc.embed_url) {
+        setPreviewUrl(normalizeEmbedUrl(doc.embed_url))
+        return
+      }
+
+      // Uploaded docs -> signed URL
+      if (!doc.storage_path) {
+        setPreviewError('No preview available')
+        return
+      }
+
+      const { data, error } = await supabase.storage
+        .from('project-files')
+        .createSignedUrl(doc.storage_path, 60 * 10)
+
+      if (error || !data?.signedUrl) {
+        setPreviewError('Could not load preview')
+        return
+      }
+
+      setPreviewUrl(data.signedUrl)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  // ==========
+  // Upload helpers
+  // ==========
+  const sanitizeFileName = (name: string) => name.replace(/[^\w.\-]+/g, '_')
+
+  const inferFileType = (file: File) => {
+    if (file.type) return file.type
+    const ext = file.name.split('.').pop()?.toLowerCase()
+    return ext ? `.${ext}` : 'file'
+  }
+
+  const uploadDocFile = async (file: File) => {
+    setUploadError(null)
+    setUploadingDoc(true)
+
+    try {
+      const safeName = sanitizeFileName(file.name)
+      const storagePath = `${projectId}/${Date.now()}_${safeName}`
+
+      // 1) upload to Storage
+      const { error: upErr } = await supabase.storage
+        .from('project-files')
+        .upload(storagePath, file, {
+          cacheControl: '3600',
+          upsert: false,
+          contentType: file.type || undefined,
+        })
+
+      if (upErr) throw upErr
+
+      // 2) insert row into project_documents
+      const { data, error: dbErr } = await supabase
+        .from('project_documents')
+        .insert({
+          project_id: projectId,
+          title: file.name,
+          storage_path: storagePath,
+          embed_url: null,
+          file_type: inferFileType(file),
+          size_bytes: file.size,
+        })
+        .select('id, project_id, title, storage_path, embed_url, file_type, size_bytes, created_at, updated_at')
+        .single()
+
+      if (dbErr || !data) throw dbErr
+
+      // 3) update UI
+      setDocs((prev) => [...prev, data as ProjectDoc])
+      setPickedFileName(null)
+      setDocAddOpen(false)
+    } catch (e: any) {
+      console.error('Upload doc error:', e)
+      setUploadError(e?.message ?? 'Upload failed')
+    } finally {
+      setUploadingDoc(false)
+      // allow selecting the same file again
+      if (fileInputRef.current) fileInputRef.current.value = ''
+    }
+  }
+
+  const openDoc = async (doc: ProjectDoc) => {
+    if (doc.embed_url) {
+      window.open(doc.embed_url, '_blank', 'noreferrer')
+      return
+    }
+    if (!doc.storage_path) return
+
+    const { data, error } = await supabase.storage
+      .from('project-files')
+      .createSignedUrl(doc.storage_path, 60 * 10)
+
+    if (error || !data?.signedUrl) {
+      console.error('Signed URL error:', error)
+      alert('Could not open file')
+      return
+    }
+
+    window.open(data.signedUrl, '_blank', 'noreferrer')
+  }
+
   // ✅ file picker handlers (MUST be in component scope)
   const onPickFileClick = () => {
     fileInputRef.current?.click()
@@ -109,15 +319,7 @@ export default function AdminProjectPage() {
   const onFileSelected = (file: File | null) => {
     if (!file) return
     setPickedFileName(file.name)
-
-    console.log('Selected file:', {
-      name: file.name,
-      type: file.type,
-      size: file.size,
-    })
-
-    // allow selecting the same file again
-    if (fileInputRef.current) fileInputRef.current.value = ''
+    uploadDocFile(file)
   }
 
   // Steps are phase headers
@@ -146,7 +348,6 @@ export default function AdminProjectPage() {
     const loadData = async () => {
       setLoading(true)
 
-      // 1) Load project + steps + tasks
       const { data: projectData, error } = await supabase
         .from('projects')
         .select(
@@ -187,30 +388,22 @@ export default function AdminProjectPage() {
         project_steps: (projectData.project_steps || []) as StepRaw[],
       })
 
-      // 2) Load todos
       const { data: todosData, error: todoErr } = await supabase
         .from('project_todos')
         .select('id, text, created_at')
         .eq('project_id', projectId)
         .order('created_at')
 
-      if (todoErr) {
-        console.error('Load todos error:', todoErr, JSON.stringify(todoErr))
-      }
+      if (todoErr) console.error('Load todos error:', todoErr, JSON.stringify(todoErr))
       setTodos((todosData || []) as Todo[])
 
-      // 3) Load docs
       const { data: docsData, error: docsErr } = await supabase
         .from('project_documents')
-        .select(
-          'id, project_id, title, storage_path, embed_url, file_type, size_bytes, created_at, updated_at'
-        )
+        .select('id, project_id, title, storage_path, embed_url, file_type, size_bytes, created_at, updated_at')
         .eq('project_id', projectId)
         .order('created_at')
 
-      if (docsErr) {
-        console.error('Load docs error:', docsErr, JSON.stringify(docsErr))
-      }
+      if (docsErr) console.error('Load docs error:', docsErr, JSON.stringify(docsErr))
       setDocs((docsData || []) as ProjectDoc[])
 
       setLoading(false)
@@ -219,7 +412,35 @@ export default function AdminProjectPage() {
     loadData()
   }, [projectId])
 
-  // ✅ Early returns AFTER all hooks
+    useEffect(() => {
+    const loadThumbs = async () => {
+      // only for uploaded files
+      const targets = docs.filter((d) => d.storage_path)
+
+      if (targets.length === 0) return
+
+      const missing = targets.filter((d) => !docThumbs[d.id])
+      if (missing.length === 0) return
+
+      const next: Record<string, string> = {}
+
+      for (const d of missing) {
+        const { data, error } = await supabase.storage
+          .from('project-files')
+          .createSignedUrl(d.storage_path!, 60 * 10)
+
+        if (!error && data?.signedUrl) next[d.id] = data.signedUrl
+      }
+
+      if (Object.keys(next).length > 0) {
+        setDocThumbs((prev) => ({ ...prev, ...next }))
+      }
+    }
+
+    loadThumbs()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docs])
+
   if (loading) return <p className="p-8">Loading…</p>
   if (!project) return <p className="p-8">Project not found</p>
 
@@ -240,6 +461,23 @@ export default function AdminProjectPage() {
     setTodos((prev) => [...prev, data as Todo])
     setNewTodo('')
   }
+
+  const deleteTodo = async (todoId: string) => {
+  const ok = confirm('Delete this note?')
+  if (!ok) return
+
+  // optimistic UI
+  setTodos((prev) => prev.filter((t) => t.id !== todoId))
+
+  setDeletingTodoId(todoId)
+  const { error } = await supabase.from('project_todos').delete().eq('id', todoId)
+  setDeletingTodoId(null)
+
+  if (error) {
+    console.error('Delete todo error:', error, JSON.stringify(error))
+    // optional: reload the todos if you want to recover
+  }
+}
 
   const deleteProject = async () => {
     const typed = prompt(`Type DELETE to permanently delete "${project.name}"`)
@@ -286,9 +524,7 @@ export default function AdminProjectPage() {
     setProject((prev: any) => ({
       ...prev,
       project_steps: (prev.project_steps || []).map((s: StepRaw) =>
-        s.id === stepId
-          ? { ...s, project_step_tasks: [...(s.project_step_tasks || []), data] }
-          : s
+        s.id === stepId ? { ...s, project_step_tasks: [...(s.project_step_tasks || []), data] } : s
       ),
     }))
 
@@ -401,7 +637,6 @@ export default function AdminProjectPage() {
     if (error) console.error('Delete task error:', error, JSON.stringify(error))
   }
 
-  // ✅ MVP: add an embedded link doc (later we’ll add uploads too)
   const addDocLink = async () => {
     const title = newDocTitle.trim()
     const url = newDocUrl.trim()
@@ -478,7 +713,31 @@ export default function AdminProjectPage() {
             {todos.length === 0 ? (
               <p className="text-gray-400">No notes yet</p>
             ) : (
-              todos.map((t) => <p key={t.id}>• {t.text}</p>)
+              todos.map((t) => {
+  const busy = deletingTodoId === t.id
+
+  return (
+    <div
+      key={t.id}
+      className={`group flex items-start gap-2 text-sm ${busy ? 'opacity-60' : ''}`}
+    >
+      <span className="pt-[2px]">•</span>
+
+      <span className="flex-1">{t.text}</span>
+
+      <button
+        type="button"
+        onClick={() => deleteTodo(t.id)}
+        disabled={busy}
+        className="opacity-0 group-hover:opacity-100 transition text-xs text-red-600 hover:text-red-800 px-2"
+        title="Delete note"
+        aria-label="Delete note"
+      >
+        🗑
+      </button>
+    </div>
+  )
+})
             )}
           </div>
 
@@ -488,6 +747,8 @@ export default function AdminProjectPage() {
               placeholder="Add note…"
               value={newTodo}
               onChange={(e) => setNewTodo(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') addTodo()}}
             />
             <button onClick={addTodo} className="bg-black text-white px-3 rounded">
               Add
@@ -508,6 +769,7 @@ export default function AdminProjectPage() {
                 setNewDocTitle('')
                 setNewDocUrl('')
                 setPickedFileName(null)
+                setUploadError(null)
               }}
               className="text-sm underline text-neutral-600 hover:text-black"
             >
@@ -529,8 +791,8 @@ export default function AdminProjectPage() {
           ) : (
             <div className="shrink-0 w-[520px] rounded-2xl border p-3">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {/* FILE SLOT (picker now) */}
-                <div className="h-fill rounded-2xl border border-dashed p-3 flex flex-col justify-between">
+                {/* FILE SLOT (uploads now) */}
+                <div className="h-28 rounded-2xl border border-dashed p-3 flex flex-col justify-between">
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -541,16 +803,21 @@ export default function AdminProjectPage() {
                   <button
                     type="button"
                     onClick={onPickFileClick}
-                    className="flex-1 rounded-xl flex flex-col items-center justify-center text-sm text-gray-600 hover:text-black transition"
+                    disabled={uploadingDoc}
+                    className="flex-1 rounded-xl flex flex-col items-center justify-center text-sm text-gray-600 hover:text-black transition disabled:opacity-60"
                     title="Upload a file"
                   >
-                    <div className="text-lg">⬆️</div>
-                    <div className="pt-1 font-medium">Choose a file</div>
+                    <div className="text-lg">{uploadingDoc ? '⏳' : '⬆️'}</div>
+                    <div className="pt-1 font-medium">
+                      {uploadingDoc ? 'Uploading…' : 'Choose a file'}
+                    </div>
                     <div className="text-xs text-gray-400 pt-1">PDF, PNG, JPG, etc.</div>
                   </button>
 
                   <div className="pt-2 text-xs text-gray-500">
-                    {pickedFileName ? (
+                    {uploadError ? (
+                      <span className="text-red-600 line-clamp-1">{uploadError}</span>
+                    ) : pickedFileName ? (
                       <span className="line-clamp-1">Selected: {pickedFileName}</span>
                     ) : (
                       <span>Nothing selected yet</span>
@@ -558,7 +825,7 @@ export default function AdminProjectPage() {
                   </div>
                 </div>
 
-                {/* LINK SLOT (works now) */}
+                {/* LINK SLOT */}
                 <div className="h-fit rounded-2xl border flex flex-col justify-between p-3">
                   <div className="text-sm font-medium">Paste link</div>
 
@@ -593,36 +860,203 @@ export default function AdminProjectPage() {
               </div>
 
               <p className="text-xs text-gray-500 pt-2">
-                Uploads are next — this panel is already built to support both.
+                Uploads are live now 😤 — links + files both supported.
               </p>
             </div>
           )}
 
           {/* Existing docs */}
-          {docs.map((d) => (
-            <a
-              key={d.id}
-              href={d.embed_url ?? '#'}
-              target="_blank"
-              rel="noreferrer"
-              className="shrink-0 w-52 rounded-2xl border p-3 hover:border-black transition"
-              title={d.title}
-            >
-              <div className="text-sm font-medium line-clamp-2">{d.title}</div>
-              <div className="pt-2 text-xs text-gray-500">
-                {d.file_type ?? 'doc'} • Added {formatDateTimeShort(d.created_at)}
-              </div>
-              <div className="pt-2 text-xs text-gray-400 line-clamp-1">
-                {d.embed_url ?? d.storage_path ?? ''}
-              </div>
-            </a>
-          ))}
+                    {docs.map((d) => {
+            const thumbUrl = d.storage_path ? docThumbs[d.id] : null
+            const isLink = !!d.embed_url
+
+            // for link thumbnails, use your existing normalizeEmbedUrl helper
+            const linkThumb = d.embed_url ? normalizeEmbedUrl(d.embed_url) : null
+
+            return (
+              <button
+                key={d.id}
+                type="button"
+                onClick={() => openPreview(d)}
+                className="group shrink-0 w-52 rounded-2xl border hover:border-black transition overflow-hidden text-left relative"
+                title={d.title}
+              >
+                {/* THUMBNAIL AREA */}
+                <div className="h-28 bg-gray-50 border-b relative">
+                  {/* Link preview thumbnail (iframe) */}
+                  {isLink && linkThumb ? (
+                    <iframe
+                      src={linkThumb}
+                      className="absolute inset-0 w-full h-full"
+                      title="Link thumbnail"
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+                      style={{
+                        pointerEvents: 'none', // so clicking hits the button
+                      }}
+                    />
+                  ) : null}
+
+                  {/* Uploaded image thumbnail */}
+                  {!isLink && thumbUrl && d.file_type?.startsWith('image/') ? (
+                    <img
+                      src={thumbUrl}
+                      alt={d.title}
+                      className="absolute inset-0 w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : null}
+
+                  {/* Uploaded PDF thumbnail */}
+                  {!isLink && thumbUrl && (d.file_type?.includes('pdf') || d.file_type?.includes('.pdf')) ? (
+                    <iframe
+                      src={thumbUrl}
+                      className="absolute inset-0 w-full h-full"
+                      title="PDF thumbnail"
+                      loading="lazy"
+                      style={{ pointerEvents: 'none' }}
+                    />
+                  ) : null}
+
+                  {/* Fallback tile */}
+                  {(!isLink && !thumbUrl) || (!isLink && thumbUrl && !(d.file_type?.startsWith('image/') || d.file_type?.includes('pdf') || d.file_type?.includes('.pdf'))) ? (
+                    <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500">
+                      <div className="px-2 py-1 rounded bg-white border">
+                        {(d.file_type ?? 'FILE').toUpperCase()}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {/* Small corner badge */}
+                  <div className="absolute top-2 left-2 text-[10px] px-2 py-1 rounded-full bg-white/90 border text-gray-600">
+                    {isLink ? 'LINK' : d.file_type?.includes('pdf') ? 'PDF' : d.file_type?.startsWith('image/') ? 'IMAGE' : 'FILE'}
+                  </div>
+                  {/* Delete icon (hover only) */}
+                  <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        deleteDoc(d)
+                      }}
+                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition bg-white/90 backdrop-blur border rounded-full w-7 h-7 flex items-center justify-center text-xs hover:bg-red-50 hover:border-red-300 hover:text-red-600"
+                    title="Delete document"
+                    >
+                    🗑
+                  </button>
+                </div>
+
+                {/* META AREA */}
+                <div className="p-3">
+                  <div className="text-sm font-medium line-clamp-2">{d.title}</div>
+                  <div className="pt-2 text-xs text-gray-500">
+                    Added {formatDateTimeShort(d.created_at)}
+                  </div>
+                  <div className="pt-2 text-xs text-gray-400 line-clamp-1">
+                    {d.embed_url ?? d.storage_path ?? ''}
+                  </div>
+                </div>
+              </button>
+            )
+          })}
         </div>
 
         {docs.length === 0 ? (
           <p className="text-sm text-gray-400">No documents yet — add links or uploads for client review.</p>
         ) : null}
       </div>
+
+            {/* 👀 Preview Modal */}
+      {previewOpen ? (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onMouseDown={(e) => {
+            // click outside closes
+            if (e.target === e.currentTarget) closePreview()
+          }}
+        >
+          <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl border overflow-hidden">
+            <div className="p-4 border-b flex items-start justify-between gap-4">
+              <div>
+                <div className="text-sm text-gray-500">Preview</div>
+                <div className="font-semibold">{previewDoc?.title ?? 'Document'}</div>
+                <div className="text-xs text-gray-400 pt-1">
+                  {previewDoc?.file_type ?? ''}{previewDoc?.created_at ? ` • Added ${formatDateTimeShort(previewDoc.created_at)}` : ''}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {previewDoc?.embed_url ? (
+                  <button
+                    onClick={() => window.open(previewDoc.embed_url!, '_blank', 'noreferrer')}
+                    className="text-sm underline text-neutral-600 hover:text-black"
+                  >
+                    Open
+                  </button>
+                ) : previewDoc?.storage_path ? (
+                  <button
+                    onClick={() => {
+                      if (previewUrl) window.open(previewUrl, '_blank', 'noreferrer')
+                    }}
+                    disabled={!previewUrl}
+                    className="text-sm underline text-neutral-600 hover:text-black disabled:opacity-60"
+                  >
+                    Open
+                  </button>
+                ) : null}
+
+                <button
+                  onClick={closePreview}
+                  className="text-sm underline text-neutral-600 hover:text-black"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4">
+              {previewLoading ? (
+                <div className="text-sm text-gray-500">Loading preview…</div>
+              ) : previewError ? (
+                <div className="text-sm text-red-600">{previewError}</div>
+              ) : !previewUrl ? (
+                <div className="text-sm text-gray-500">No preview available.</div>
+              ) : (
+                <div className="w-full">
+                  {/* If link embed OR pdf -> iframe */}
+                  {previewDoc?.embed_url || (previewDoc && isProbablyPdf(previewDoc)) ? (
+                    <iframe
+                      src={previewUrl}
+                      className="w-full h-[70vh] rounded-xl border"
+                      title="Document preview"
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
+                    />
+                  ) : previewDoc && isProbablyImage(previewDoc) ? (
+                    <img
+                      src={previewUrl}
+                      alt={previewDoc.title}
+                      className="max-h-[70vh] w-auto mx-auto rounded-xl border"
+                    />
+                  ) : (
+                    <div className="rounded-xl border p-4 text-sm text-gray-600">
+                      This file type doesn’t support inline preview yet.
+                      <div className="pt-2">
+                        <button
+                          className="underline"
+                          onClick={() => window.open(previewUrl, '_blank', 'noreferrer')}
+                        >
+                          Open file
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {/* Progress + Tasks */}
       <div className="border rounded-2xl p-5 space-y-3">
