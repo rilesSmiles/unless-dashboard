@@ -1,55 +1,55 @@
 // components/projects/ProjectCard.tsx
-
 import { Project } from '@/app/dashboard/admin/projects/page'
-
-type Props = {
-  project: Project
-  onClick?: () => void
-}
 
 export default function ProjectCard({
   project,
-  onClick,
-}: Props) {
+  onOpen,
+  onDelete,
+  deleting,
+}: {
+  project: Project
+  onOpen: () => void
+  onDelete?: () => void
+  deleting?: boolean
+}) {
   return (
     <div
-      onClick={onClick}
-      className="
-        rounded-2xl
-        border border-neutral-800
-        bg-neutral-900
-        p-5
-        hover:border-neutral-600
-        hover:shadow-lg
-        transition
-        cursor-pointer
-        space-y-2
-      "
+      onClick={onOpen}
+      className="group relative rounded-2xl border border-neutral-800 bg-neutral-900 p-5 hover:border-neutral-600 transition cursor-pointer"
     >
-      {/* Header */}
-      <div className="flex justify-between items-start gap-2">
+      {/* Hover delete */}
+      {onDelete && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete()
+          }}
+          disabled={deleting}
+          className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition text-xs border border-red-500 text-red-600 px-3 py-2 rounded-lg disabled:opacity-60"
+          title="Delete project"
+        >
+          {deleting ? 'Deleting…' : 'Delete'}
+        </button>
+      )}
 
-        <h3 className="font-semibold text-lg leading-tight">
-          {project.name}
-        </h3>
+      <div className="space-y-2">
+        <div>
+          <h3 className="font-semibold text-lg text-white">{project.name}</h3>
+          <p className="text-sm text-neutral-400">
+            {project.business_name ?? 'Client'}
+          </p>
+        </div>
 
-        {/* Status Pill */}
-        <span className="text-xs px-2 py-1 rounded-full bg-neutral-800 text-neutral-300">
-          Active
-        </span>
-
+        <div className="text-xs text-neutral-400">
+          <p>Type: {project.project_type ?? '—'}</p>
+          <p>
+            Created:{' '}
+            {project.created_at
+              ? new Date(project.created_at).toLocaleDateString()
+              : '—'}
+          </p>
+        </div>
       </div>
-
-      {/* Business Name */}
-      <p className="text-sm text-neutral-400 truncate">
-        {project.business_name || 'No client assigned'}
-      </p>
-
-      {/* Project Type */}
-      <p className="text-sm text-neutral-500">
-        {project.project_type || 'General'}
-      </p>
-
     </div>
   )
 }

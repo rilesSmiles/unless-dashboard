@@ -4,12 +4,12 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const navItems = [
-  { name: 'Home', href: '/dashboard/admin' },
-  { name: 'Projects', href: '/dashboard/admin/projects' },
-  { name: 'Invoices', href: '/dashboard/admin/invoices' },
-  { name: 'Accounts', href: '/dashboard/admin/accounts' },
-  { name: 'Templates', href: '/dashboard/admin/templates' },
-  { name: 'Profile', href: '/dashboard/admin/profile' },
+  { name: 'HOME', href: '/dashboard/admin' },
+  { name: 'PROJECTS', href: '/dashboard/admin/projects' },
+  { name: 'INVOICES', href: '/dashboard/admin/invoices' },
+  { name: 'ACCOUNTS', href: '/dashboard/admin/accounts' },
+  { name: 'TEMPLATES', href: '/dashboard/admin/templates' },
+  { name: 'PROFILE', href: '/dashboard/admin/profile' },
 ]
 
 export default function AdminBottomNav() {
@@ -18,9 +18,10 @@ export default function AdminBottomNav() {
   return (
     <nav
       className="
-        fixed bottom-0 left-0 right-0
-        bg-white/90 backdrop-blur
-        border-t
+        fixed bottom-10 left-20 right-20
+        bg-white/50 backdrop-blur
+        border-black/100
+        rounded-4xl
         z-50
       "
     >
@@ -34,13 +35,13 @@ export default function AdminBottomNav() {
               key={item.href}
               href={item.href}
               className={`
-                flex flex-col items-center text-xs
-                px-2 py-1 rounded-lg
+                flex flex-col items-center text-sm
+                px-2 py-3 rounded-lg
                 transition
                 ${
                   active
                     ? 'text-black font-semibold'
-                    : 'text-gray-400 hover:text-black'
+                    : 'text-gray-600 hover:text-black'
                 }
               `}
             >
