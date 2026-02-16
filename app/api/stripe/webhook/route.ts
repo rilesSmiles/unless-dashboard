@@ -1,18 +1,23 @@
 import { NextResponse } from 'next/server'
 import Stripe from 'stripe'
+import { createClient } from '@supabase/supabase-js'
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
   apiVersion: '2026-01-28.clover',
 })
 
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
+
 export async function POST(req: Request) {
   const body = await req.text()
-
   const sig = req.headers.get('stripe-signature')
 
   if (!sig) {
     return NextResponse.json(
-      { error: 'Missing signature' },
+      { error: 'Missing stripe-signature' },
       { status: 400 }
     )
   }
@@ -26,27 +31,39 @@ export async function POST(req: Request) {
       process.env.STRIPE_WEBHOOK_SECRET!
     )
   } catch (err: any) {
-    console.error('Webhook error:', err.message)
-
+    console.error('Webhook signature error:', err.message)
     return NextResponse.json(
-      { error: 'Webhook signature verification failed' },
+      { error: 'Invalid signature' },
       { status: 400 }
     )
   }
 
-  // ✅ Handle events later
-  switch (event.type) {
-    case 'checkout.session.completed':
-      console.log('Checkout completed')
-      break
+  try {
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object as Stripe.Checkout.Session
+      const invoiceId = session.metadata?.invoiceId
 
-    case 'invoice.payment_succeeded':
-      console.log('Invoice paid')
-      break
+      if (invoiceId) {
+        await supabaseAdmin
+          .from('invoices')
+          .update({
+            status: 'paid',
+            paid_at: new Date().toISOString(),
+            stripe_payment_intent_id:
+              typeof session.payment_intent === 'string'
+                ? session.payment_intent
+                : null,
+          })
+          .eq('id', invoiceId)
+      }
+    }
 
-    default:
-      console.log(`Unhandled event: ${event.type}`)
+    return NextResponse.json({ received: true })
+  } catch (err: any) {
+    console.error('Webhook handler error:', err)
+    return NextResponse.json(
+      { error: 'Webhook handler failed' },
+      { status: 500 }
+    )
   }
-
-  return NextResponse.json({ received: true })
 }
