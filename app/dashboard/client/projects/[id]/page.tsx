@@ -382,7 +382,7 @@ export default function ClientProjectPage() {
         </div>
 
         <button
-          onClick={() => router.push('/dashboard/client/projects')}
+          onClick={() => router.push('/dashboard/client')}
           className="text-sm underline text-neutral-600 hover:text-black"
         >
           Back
