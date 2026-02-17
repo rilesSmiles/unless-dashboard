@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation'
 
 const navItems = [
   { name: 'HOME', href: '/dashboard/client' },
-  { name: 'PROJECTS', href: '/dashboard/client/projects' },
   { name: 'INVOICES', href: '/dashboard/client/invoices' },
   { name: 'PROFILE', href: '/dashboard/client/profile' },
 ]
@@ -16,7 +15,7 @@ export default function AdminBottomNav() {
   return (
     <nav
       className="
-        fixed bottom-10 left-70 right-70
+        fixed bottom-10 left-100 right-100
         bg-white/50 backdrop-blur
         border-black/100
         rounded-4xl

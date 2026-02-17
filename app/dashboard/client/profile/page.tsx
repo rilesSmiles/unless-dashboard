@@ -5,8 +5,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 
 type Profile = {
   id: string
-  full_name: string | null
-  company: string | null
+  name: string | null
+  business_name: string | null
   phone: string | null
   website: string | null
   avatar_url: string | null
@@ -21,10 +21,14 @@ export default function ClientProfilePage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [email, setEmail] = useState<string>('')
+
+  // modal
+  const [editOpen, setEditOpen] = useState(false)
 
   // form fields
-  const [fullName, setFullName] = useState('')
-  const [company, setCompany] = useState('')
+  const [name, setName] = useState('')
+  const [businessName, setBusinessName] = useState('')
   const [phone, setPhone] = useState('')
   const [website, setWebsite] = useState('')
 
@@ -33,8 +37,8 @@ export default function ClientProfilePage() {
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   const hydrateForm = (p: Profile) => {
-    setFullName(p.full_name ?? '')
-    setCompany(p.company ?? '')
+    setName(p.name ?? '')
+    setBusinessName(p.business_name ?? '')
     setPhone(p.phone ?? '')
     setWebsite(p.website ?? '')
   }
@@ -56,6 +60,8 @@ export default function ClientProfilePage() {
 
       const { data: authData, error: authErr } = await supabase.auth.getUser()
       const userId = authData?.user?.id
+      const userEmail = authData?.user?.email ?? ''
+      setEmail(userEmail)
 
       if (authErr || !userId) {
         setErrorMsg('You must be signed in.')
@@ -63,27 +69,22 @@ export default function ClientProfilePage() {
         return
       }
 
-      // Ensure a profiles row exists (idempotent)
-      const { error: upErr } = await supabase
-        .from('profiles')
-        .upsert({ id: userId }, { onConflict: 'id' })
-
+      // ensure row exists (idempotent)
+      const { error: upErr } = await supabase.from('profiles').upsert({ id: userId }, { onConflict: 'id' })
       if (upErr) {
-        console.error('Profile upsert error:', upErr)
         setErrorMsg('Could not initialize your profile.')
         setLoading(false)
         return
       }
 
-      // Load profile
+      // load profile
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, full_name, company, phone, website, avatar_url, last_seen_at, updated_at')
+        .select('id, name, business_name, phone, website, avatar_url, last_seen_at, updated_at')
         .eq('id', userId)
         .single()
 
       if (error || !data) {
-        console.error('Load profile error:', error)
         setErrorMsg('Could not load your profile.')
         setLoading(false)
         return
@@ -103,12 +104,18 @@ export default function ClientProfilePage() {
   const hasChanges = useMemo(() => {
     if (!profile) return false
     return (
-      (profile.full_name ?? '') !== fullName ||
-      (profile.company ?? '') !== company ||
+      (profile.name ?? '') !== name ||
+      (profile.business_name ?? '') !== businessName ||
       (profile.phone ?? '') !== phone ||
       (profile.website ?? '') !== website
     )
-  }, [profile, fullName, company, phone, website])
+  }, [profile, name, businessName, phone, website])
+
+  const closeEdit = () => {
+    setEditOpen(false)
+    setErrorMsg(null)
+    if (profile) hydrateForm(profile)
+  }
 
   const saveProfile = async () => {
     if (!profile) return
@@ -125,23 +132,21 @@ export default function ClientProfilePage() {
 
     const payload = {
       id: userId,
-      full_name: fullName.trim() || null,
-      company: company.trim() || null,
+      name: name.trim() || null,
+      business_name: businessName.trim() || null,
       phone: phone.trim() || null,
       website: website.trim() || null,
-      // updated_at is auto-set by trigger, but leaving it doesn’t hurt either way
     }
 
     const { data, error } = await supabase
       .from('profiles')
       .upsert(payload, { onConflict: 'id' })
-      .select('id, full_name, company, phone, website, avatar_url, last_seen_at, updated_at')
+      .select('id, name, business_name, phone, website, avatar_url, last_seen_at, updated_at')
       .single()
 
     setSaving(false)
 
     if (error || !data) {
-      console.error('Save profile error:', error)
       setErrorMsg('Could not save your changes.')
       return
     }
@@ -149,13 +154,13 @@ export default function ClientProfilePage() {
     const p = data as Profile
     setProfile(p)
     hydrateForm(p)
+    setEditOpen(false)
   }
 
   const onPickAvatar = () => fileRef.current?.click()
 
   const onAvatarSelected = async (file: File | null) => {
-    if (!file) return
-    if (!profile) return
+    if (!file || !profile) return
 
     setUploading(true)
     setErrorMsg(null)
@@ -179,7 +184,7 @@ export default function ClientProfilePage() {
       }
 
       const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg'
-      const path = `${userId}/${Date.now()}.${ext}` // IMPORTANT: folder = userId
+      const path = `${userId}/${Date.now()}.${ext}`
 
       const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, {
         upsert: true,
@@ -188,20 +193,17 @@ export default function ClientProfilePage() {
       })
 
       if (upErr) {
-        console.error('Avatar upload error:', upErr)
         setErrorMsg('Could not upload that image.')
         return
       }
 
-      // Save storage path to profile
       const { data, error: profErr } = await supabase
         .from('profiles')
         .upsert({ id: userId, avatar_url: path }, { onConflict: 'id' })
-        .select('id, full_name, company, phone, website, avatar_url, last_seen_at, updated_at')
+        .select('id, name, business_name, phone, website, avatar_url, last_seen_at, updated_at')
         .single()
 
       if (profErr || !data) {
-        console.error('Avatar profile update error:', profErr)
         setErrorMsg('Uploaded, but could not save to your profile.')
         return
       }
@@ -226,9 +228,9 @@ export default function ClientProfilePage() {
 
       {errorMsg ? <div className="text-sm text-red-600">{errorMsg}</div> : null}
 
-      {/* Avatar */}
-      <div className="border rounded-2xl p-5 flex items-center gap-4">
-        <div className="w-16 h-16 rounded-full border overflow-hidden bg-gray-100 flex items-center justify-center">
+      {/* Profile card */}
+      <div className="border rounded-2xl p-5 flex items-start gap-4">
+        <div className="w-16 h-16 rounded-full border overflow-hidden bg-gray-100 flex items-center justify-center shrink-0">
           {avatarPreviewUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={avatarPreviewUrl} alt="Profile photo" className="w-full h-full object-cover" />
@@ -237,79 +239,155 @@ export default function ClientProfilePage() {
           )}
         </div>
 
-        <div className="flex-1">
-          <div className="font-semibold">{fullName || 'Your name'}</div>
-          <div className="text-xs text-gray-500">{company || '—'}</div>
+        <div className="flex-1 min-w-0">
+          <div className="font-semibold text-lg leading-tight">{profile?.name ?? 'Your name'}</div>
+          <div className="text-sm text-gray-600">{profile?.business_name ?? '—'}</div>
+
+          <div className="pt-3 space-y-1 text-sm text-gray-700">
+            <div className="flex gap-2">
+              <span className="text-gray-500 w-16 shrink-0">Email</span>
+              <span className="truncate">{email || '—'}</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="text-gray-500 w-16 shrink-0">Phone</span>
+              <span className="truncate">{profile?.phone ?? '—'}</span>
+            </div>
+            <div className="flex gap-2">
+              <span className="text-gray-500 w-16 shrink-0">Website</span>
+              {profile?.website ? (
+                <a
+                  href={profile.website}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="truncate underline text-neutral-700 hover:text-black"
+                >
+                  {profile.website}
+                </a>
+              ) : (
+                <span>—</span>
+              )}
+            </div>
+          </div>
+
+          <div className="text-xs text-gray-500 pt-3">
+            Last updated: {profile?.updated_at ? new Date(profile.updated_at).toLocaleString() : '—'}
+          </div>
         </div>
 
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => onAvatarSelected(e.target.files?.[0] ?? null)}
-        />
+        <div className="flex flex-col items-end gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => onAvatarSelected(e.target.files?.[0] ?? null)}
+          />
 
-        <button
-          type="button"
-          onClick={onPickAvatar}
-          disabled={uploading}
-          className="border rounded-xl px-4 py-2 text-sm hover:border-black disabled:opacity-60"
+          <button
+            type="button"
+            onClick={onPickAvatar}
+            disabled={uploading}
+            className="border rounded-xl px-4 py-2 text-sm hover:border-black disabled:opacity-60"
+          >
+            {uploading ? 'Uploading…' : 'Change photo'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setEditOpen(true)}
+            className="bg-black text-white rounded-xl px-4 py-2 text-sm hover:opacity-90"
+          >
+            Update profile
+          </button>
+        </div>
+      </div>
+
+      {/* Edit modal */}
+      {editOpen ? (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) closeEdit()
+          }}
         >
-          {uploading ? 'Uploading…' : 'Change photo'}
-        </button>
-      </div>
+          <div className="w-full max-w-xl bg-white rounded-2xl shadow-xl border overflow-hidden">
+            <div className="p-4 border-b flex items-start justify-between gap-4">
+              <div>
+                <div className="text-sm text-gray-500">Edit profile</div>
+                <div className="font-semibold">Update your info</div>
+              </div>
 
-      {/* Fields */}
-      <div className="border rounded-2xl p-5 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div>
-            <div className="text-xs text-gray-500 pb-1">Full name</div>
-            <input className="border rounded p-2 w-full" value={fullName} onChange={(e) => setFullName(e.target.value)} />
-          </div>
+              <button
+                type="button"
+                onClick={closeEdit}
+                className="text-sm underline text-neutral-600 hover:text-black"
+              >
+                Close
+              </button>
+            </div>
 
-          <div>
-            <div className="text-xs text-gray-500 pb-1">Company</div>
-            <input className="border rounded p-2 w-full" value={company} onChange={(e) => setCompany(e.target.value)} />
-          </div>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <div className="text-xs text-gray-500 pb-1">Name</div>
+                  <input
+                    className="border rounded p-2 w-full"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                  />
+                </div>
 
-          <div>
-            <div className="text-xs text-gray-500 pb-1">Phone</div>
-            <input className="border rounded p-2 w-full" value={phone} onChange={(e) => setPhone(e.target.value)} />
-          </div>
+                <div>
+                  <div className="text-xs text-gray-500 pb-1">Business name</div>
+                  <input
+                    className="border rounded p-2 w-full"
+                    value={businessName}
+                    onChange={(e) => setBusinessName(e.target.value)}
+                  />
+                </div>
 
-          <div>
-            <div className="text-xs text-gray-500 pb-1">Website</div>
-            <input className="border rounded p-2 w-full" value={website} onChange={(e) => setWebsite(e.target.value)} />
+                <div>
+                  <div className="text-xs text-gray-500 pb-1">Phone</div>
+                  <input
+                    className="border rounded p-2 w-full"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <div className="text-xs text-gray-500 pb-1">Website</div>
+                  <input
+                    className="border rounded p-2 w-full"
+                    value={website}
+                    onChange={(e) => setWebsite(e.target.value)}
+                    placeholder="https://..."
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={closeEdit}
+                  className="border rounded-xl px-4 py-2 text-sm hover:border-black"
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={saveProfile}
+                  disabled={saving || !hasChanges}
+                  className="bg-black text-white px-4 py-2 rounded-xl text-sm disabled:opacity-60"
+                >
+                  {saving ? 'Saving…' : 'Save changes'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-
-        <div className="flex justify-end gap-2 pt-2">
-          <button
-            type="button"
-            onClick={() => {
-              if (!profile) return
-              hydrateForm(profile)
-            }}
-            className="text-sm underline text-neutral-600 hover:text-black"
-          >
-            Reset
-          </button>
-
-          <button
-            type="button"
-            onClick={saveProfile}
-            disabled={saving || !hasChanges}
-            className="bg-black text-white px-4 py-2 rounded-xl text-sm disabled:opacity-60"
-          >
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
-      </div>
-
-      <div className="text-xs text-gray-500">
-        Last updated: {profile?.updated_at ? new Date(profile.updated_at).toLocaleString() : '—'}
-      </div>
+      ) : null}
     </div>
   )
 }
