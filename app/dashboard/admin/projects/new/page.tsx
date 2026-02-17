@@ -24,7 +24,6 @@ export default function NewProject() {
   const [deliveryTypeId, setDeliveryTypeId] = useState('')
 
   const [clients, setClients] = useState<Profile[]>([])
-  const [deliveryTypes, setDeliveryTypes] = useState<DeliveryType[]>([])
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -50,7 +49,6 @@ export default function NewProject() {
         if (typesError) throw typesError
 
         setClients((clientsData || []) as any[])
-        setDeliveryTypes(typesData || [])
       } catch (err: any) {
         console.error(err)
         setError('Failed to load form data')
@@ -60,14 +58,11 @@ export default function NewProject() {
     loadData()
   }, [])
 
-  const selectedDelivery = useMemo(() => {
-    return deliveryTypes.find((t) => t.id === deliveryTypeId) ?? null
-  }, [deliveryTypes, deliveryTypeId])
 
   const handleCreate = async () => {
     setError(null)
 
-    if (!name.trim() || !clientId || !deliveryTypeId) {
+    if (!name.trim() || !clientId ) {
       setError('Please fill in all fields')
       return
     }
@@ -81,8 +76,6 @@ export default function NewProject() {
         .insert({
           name: name.trim(),
           client_id: clientId,
-          delivery_type_id: deliveryTypeId,
-          project_type: selectedDelivery?.name ?? null, // ✅ so filters work immediately
         })
         .select('id')
         .single()
