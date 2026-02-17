@@ -46,6 +46,18 @@ type ProjectDoc = {
   updated_at: string
 }
 
+type ProjectRow = {
+  id: string
+  name: string
+  client_id: string | null
+}
+
+type ProfileClient = {
+  id: string
+  name: string | null
+  business_name: string | null
+}
+
 function formatDateShort(dateStr: string) {
   try {
     const d = new Date(`${dateStr}T00:00:00`)
@@ -114,6 +126,228 @@ export default function AdminProjectPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
+
+  // ⚙️ Settings modal
+const [settingsOpen, setSettingsOpen] = useState(false)
+const [savingSettings, setSavingSettings] = useState(false)
+const [settingsError, setSettingsError] = useState<string | null>(null)
+
+// project fields
+const [editProjectName, setEditProjectName] = useState('')
+const [editClientId, setEditClientId] = useState<string>('')
+
+// clients list (for dropdown)
+const [clientOptions, setClientOptions] = useState<ProfileClient[]>([])
+
+// steps editing (local copy)
+type StepEdit = { id: string; title: string; step_order: number; _status?: 'keep' | 'new' | 'delete' }
+const [editSteps, setEditSteps] = useState<StepEdit[]>([])
+
+const stepHasTasks = (stepId: string) => {
+  const step = stepsSorted.find((s) => s.id === stepId)
+  return (step?.project_step_tasks?.length ?? 0) > 0
+}
+
+const openSettings = async () => {
+  setSettingsError(null)
+
+  // hydrate fields from current project in state
+  setEditProjectName(project.name ?? '')
+  setEditClientId(project.client_id ?? '')
+
+  // copy steps into editable list
+  const existingSteps = ((project.project_steps ?? []) as StepRaw[]).map((s) => ({
+    id: s.id,
+    title: s.title,
+    step_order: s.step_order,
+    _status: 'keep' as const,
+  }))
+  existingSteps.sort((a, b) => a.step_order - b.step_order)
+  setEditSteps(existingSteps)
+
+  // load clients for dropdown (optional)
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, name, business_name')
+    .eq('role', 'client')
+    .order('business_name', { ascending: true })
+
+  if (!error) setClientOptions((data || []) as ProfileClient[])
+
+  setSettingsOpen(true)
+}
+
+const closeSettings = () => {
+  setSettingsOpen(false)
+  setSettingsError(null)
+}
+
+const addStepRow = () => {
+  setEditSteps((prev) => {
+    const maxOrder = prev.reduce((m, s) => Math.max(m, s.step_order), 0)
+    return [
+      ...prev,
+      {
+        id: `new-${Date.now()}`,
+        title: 'New step',
+        step_order: maxOrder + 1,
+        _status: 'new',
+      },
+    ]
+  })
+}
+
+const moveStep = (id: string, dir: 'up' | 'down') => {
+  setEditSteps((prev) => {
+    const sorted = [...prev].sort((a, b) => a.step_order - b.step_order)
+    const idx = sorted.findIndex((s) => s.id === id)
+    if (idx === -1) return prev
+
+    const swapIdx = dir === 'up' ? idx - 1 : idx + 1
+    if (swapIdx < 0 || swapIdx >= sorted.length) return prev
+
+    const a = sorted[idx]
+    const b = sorted[swapIdx]
+    const next = sorted.map((s) => ({ ...s }))
+
+    // swap step_order
+    const aOrder = a.step_order
+    a.step_order = b.step_order
+    b.step_order = aOrder
+
+    return next.sort((x, y) => x.step_order - y.step_order)
+  })
+}
+
+const deleteStepRow = (id: string) => {
+  // If it's an existing step AND it has tasks, block deletion.
+  const isNew = id.startsWith('new-')
+  if (!isNew && stepHasTasks(id)) {
+    alert("You can't delete a step that still has tasks. Move or delete the tasks first.")
+    return
+  }
+
+  // For brand-new steps, just remove from the list.
+  setEditSteps((prev) =>
+    prev
+      .map((s) => {
+        if (s.id !== id) return s
+        if (s._status === 'new' || isNew) return null
+        return { ...s, _status: 'delete' as const }
+      })
+      .filter(Boolean as any)
+  )
+}
+
+const saveSettings = async () => {
+  setSavingSettings(true)
+  setSettingsError(null)
+
+  try {
+    // 1) update project row
+    const { error: projErr } = await supabase
+      .from('projects')
+      .update({
+        name: editProjectName.trim(),
+        client_id: editClientId || null,
+      })
+      .eq('id', projectId)
+
+    if (projErr) throw projErr
+
+    // normalize order: 1..n
+    const kept = editSteps.filter((s) => s._status !== 'delete')
+    const ordered = [...kept].sort((a, b) => a.step_order - b.step_order).map((s, i) => ({
+      ...s,
+      step_order: i + 1,
+    }))
+
+    const toDelete = editSteps.filter((s) => s._status === 'delete' && !s.id.startsWith('new-'))
+    const toUpdate = ordered.filter((s) => s._status === 'keep' && !s.id.startsWith('new-'))
+    const toInsert = ordered.filter((s) => s._status === 'new' || s.id.startsWith('new-'))
+
+    // 2) deletes
+    if (toDelete.length) {
+      const { error } = await supabase.from('project_steps').delete().in(
+        'id',
+        toDelete.map((s) => s.id)
+      )
+      if (error) throw error
+    }
+
+    // 3) updates (title + order)
+    for (const s of toUpdate) {
+      const { error } = await supabase
+        .from('project_steps')
+        .update({ title: s.title.trim(), step_order: s.step_order })
+        .eq('id', s.id)
+      if (error) throw error
+    }
+
+    // 4) inserts
+    if (toInsert.length) {
+      const insertRows = toInsert.map((s) => ({
+        project_id: projectId,
+        title: s.title.trim(),
+        step_order: s.step_order,
+      }))
+      const { data: inserted, error } = await supabase
+        .from('project_steps')
+        .insert(insertRows)
+        .select('id, title, step_order')
+
+      if (error) throw error
+
+      // Merge inserted IDs into local state (optional)
+      const insertedSteps = (inserted || []) as { id: string; title: string; step_order: number }[]
+      // Re-fetch project is simplest + safest:
+    }
+
+    // ✅ easiest and safest: re-fetch project steps/tasks after save
+    // (since deleting steps may affect UI assumptions)
+    const { data: refreshed, error: refErr } = await supabase
+      .from('projects')
+      .select(
+        `
+        id,
+        name,
+        brief_content,
+        client_id,
+        project_steps (
+          id,
+          title,
+          step_order,
+          project_step_tasks (
+            id,
+            project_id,
+            project_step_id,
+            title,
+            is_done,
+            due_date,
+            created_at,
+            updated_at
+          )
+        )
+      `
+      )
+      .eq('id', projectId)
+      .single()
+
+    if (refErr || !refreshed) throw refErr
+
+    setProject({
+      ...refreshed,
+      project_steps: (refreshed.project_steps || []) as StepRaw[],
+    })
+
+    setSettingsOpen(false)
+  } catch (e: any) {
+    console.error(e)
+    setSettingsError(e?.message ?? 'Could not save settings.')
+  } finally {
+    setSavingSettings(false)
+  }
+}
 
   const deleteDoc = async (doc: ProjectDoc) => {
   const ok = confirm(`Delete "${doc.title}"?`)
@@ -680,8 +914,14 @@ export default function AdminProjectPage() {
 
         <div className="flex items-center gap-2">
           <button
+  onClick={openSettings}
+  className="border px-4 py-2 rounded-lg text-sm hover:border-black"
+>
+  ⚙️ Settings
+</button>
+          <button
             onClick={() => router.push('/dashboard/admin/projects')}
-            className="text-sm underline text-neutral-600 hover:text-black"
+            className="border px-4 py-2 rounded-lg text-sm hover:border-black"
           >
             Back to Projects
           </button>
@@ -1182,6 +1422,135 @@ export default function AdminProjectPage() {
           })}
         </div>
       </div>
+      {settingsOpen ? (
+  <div
+    className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+    onMouseDown={(e) => {
+      if (e.target === e.currentTarget) closeSettings()
+    }}
+  >
+    <div className="w-full max-w-3xl bg-white rounded-2xl shadow-xl border overflow-hidden">
+      <div className="p-4 border-b flex items-start justify-between gap-4">
+        <div>
+          <div className="text-sm text-gray-500">Project settings</div>
+          <div className="font-semibold">Edit project + steps</div>
+        </div>
+        <button onClick={closeSettings} className="text-sm underline text-neutral-600 hover:text-black">
+          Close
+        </button>
+      </div>
+
+      <div className="p-4 space-y-5">
+        {settingsError ? <div className="text-sm text-red-600">{settingsError}</div> : null}
+
+        {/* Project fields */}
+        <div className="border rounded-2xl p-4 space-y-3">
+          <div className="font-semibold">Project</div>
+
+          <div>
+            <div className="text-xs text-gray-500 pb-1">Project name</div>
+            <input
+              className="border rounded p-2 w-full"
+              value={editProjectName}
+              onChange={(e) => setEditProjectName(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <div className="text-xs text-gray-500 pb-1">Client</div>
+            <select
+              className="border rounded p-2 w-full"
+              value={editClientId}
+              onChange={(e) => setEditClientId(e.target.value)}
+            >
+              <option value="">No client</option>
+              {clientOptions.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {(c.business_name ?? 'Client') + (c.name ? ` — ${c.name}` : '')}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Steps editor */}
+        <div className="border rounded-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="font-semibold">Steps</div>
+            <button onClick={addStepRow} className="text-sm underline text-neutral-600 hover:text-black">
+              + Add step
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {editSteps
+              .filter((s) => s._status !== 'delete')
+              .sort((a, b) => a.step_order - b.step_order)
+              .map((s) => (
+                <div key={s.id} className="border rounded-xl p-3 flex items-center gap-2">
+                  <div className="text-xs text-gray-500 w-10">#{s.step_order}</div>
+
+                  <input
+                    className="border rounded p-2 flex-1"
+                    value={s.title}
+                    onChange={(e) =>
+                      setEditSteps((prev) => prev.map((x) => (x.id === s.id ? { ...x, title: e.target.value } : x)))
+                    }
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => moveStep(s.id, 'up')}
+                    className="text-xs border rounded px-2 py-2 hover:border-black"
+                    title="Move up"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveStep(s.id, 'down')}
+                    className="text-xs border rounded px-2 py-2 hover:border-black"
+                    title="Move down"
+                  >
+                    ↓
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => deleteStepRow(s.id)}
+                    className="text-xs text-red-600 hover:text-red-800 px-2"
+                    title="Delete step"
+                    aria-label="Delete step"
+                  >
+                    🗑
+                  </button>
+                </div>
+              ))}
+          </div>
+
+          <div className="text-xs text-gray-500">
+            Heads up: deleting a step may orphan tasks in that step. If you want, we can auto-delete those tasks too.
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex justify-end gap-2">
+          <button onClick={closeSettings} className="text-sm underline text-neutral-600 hover:text-black">
+            Cancel
+          </button>
+
+          <button
+            onClick={saveSettings}
+            disabled={savingSettings || !editProjectName.trim()}
+            className="bg-black text-white px-4 py-2 rounded-xl text-sm disabled:opacity-60"
+          >
+            {savingSettings ? 'Saving…' : 'Save changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+) : null}
     </div>
   )
 }
