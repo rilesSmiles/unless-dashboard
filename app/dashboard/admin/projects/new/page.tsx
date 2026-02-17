@@ -11,17 +11,12 @@ type Profile = {
   business_name: string | null
 }
 
-type DeliveryType = {
-  id: string
-  name: string
-}
 
 export default function NewProject() {
   const router = useRouter()
 
   const [name, setName] = useState('')
   const [clientId, setClientId] = useState('')
-  const [deliveryTypeId, setDeliveryTypeId] = useState('')
 
   const [clients, setClients] = useState<Profile[]>([])
 
@@ -41,12 +36,6 @@ export default function NewProject() {
 
         if (clientsError) throw clientsError
 
-        const { data: typesData, error: typesError } = await supabase
-          .from('delivery_types')
-          .select('id, name')
-          .order('name', { ascending: true })
-
-        if (typesError) throw typesError
 
         setClients((clientsData || []) as any[])
       } catch (err: any) {
