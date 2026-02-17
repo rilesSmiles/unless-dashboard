@@ -173,29 +173,6 @@ export default function NewProject() {
           </select>
         </div>
 
-        {/* Delivery Type */}
-        <div>
-          <label className="block text-sm mb-1">Delivery Type</label>
-          <select
-            className="w-full border rounded p-2"
-            value={deliveryTypeId}
-            onChange={(e) => setDeliveryTypeId(e.target.value)}
-          >
-            <option value="">Select type</option>
-            {deliveryTypes.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-
-          {selectedDelivery?.name && (
-            <p className="text-xs text-gray-500 mt-1">
-              Project type will be saved as: <span className="font-medium">{selectedDelivery.name}</span>
-            </p>
-          )}
-        </div>
-
         <button
           onClick={handleCreate}
           disabled={loading}
