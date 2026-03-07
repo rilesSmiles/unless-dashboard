@@ -1,152 +1,247 @@
-// app/dashboard/admin/projects/new/page.tsx
 'use client'
 
-import { supabase } from '@/lib/supabase'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 
-type Profile = {
-  id: string
-  name: string | null
-  business_name: string | null
+type Profile = { id: string; name: string | null; business_name: string | null }
+type SopPhase = {
+  number: string; name: string; tag: string; duration: string; who: string
+  description: string; riley_does: string[]; client_does: string[]
+  produces: string; riley_note: string
+}
+type ServiceTemplate = {
+  id: string; slug: string; name: string; category: string
+  description: string | null; duration: string | null
+  phases: string[] | null; sop_phases: SopPhase[] | null
 }
 
+const TEMPLATE_STYLE: Record<string, { border: string; badge: string; accent: string }> = {
+  intensive:    { border: 'border-amber-300',   badge: 'bg-amber-50 text-amber-800 border-amber-200',    accent: 'bg-amber-400'   },
+  system_build: { border: 'border-stone-300',   badge: 'bg-stone-50 text-stone-800 border-stone-200',    accent: 'bg-stone-500'   },
+  stewardship:  { border: 'border-neutral-300', badge: 'bg-neutral-50 text-neutral-700 border-neutral-200', accent: 'bg-neutral-500' },
+}
 
-export default function NewProject() {
+const DEFAULT_LEADERS = ['CEO / Founder', 'Leader 2', 'Leader 3', 'Leader 4', 'Leader 5', 'Leader 6']
+
+export default function NewProjectPage() {
   const router = useRouter()
-
-  const [name, setName] = useState('')
-  const [clientId, setClientId] = useState('')
-
-  const [clients, setClients] = useState<Profile[]>([])
-
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  const defaultSteps = ['Decode', 'Align', 'Systemize', 'Activate', 'Steward']
+  const [templates, setTemplates]   = useState<ServiceTemplate[]>([])
+  const [clients, setClients]       = useState<Profile[]>([])
+  const [selected, setSelected]     = useState<ServiceTemplate | null>(null)
+  const [projectName, setProjectName] = useState('')
+  const [clientId, setClientId]     = useState('')
+  const [loading, setLoading]       = useState(false)
+  const [error, setError]           = useState<string | null>(null)
+  const [step, setStep]             = useState<'template' | 'details'>('template')
 
   useEffect(() => {
-    const loadData = async () => {
-      try {
-        const { data: clientsData, error: clientsError } = await supabase
-          .from('profiles')
-          .select('id, name, business_name')
+    const load = async () => {
+      const [{ data: tplData }, { data: clientData }] = await Promise.all([
+        supabase.from('service_templates')
+          .select('id,slug,name,category,description,duration,phases,sop_phases')
+          .order('created_at'),
+        supabase.from('profiles')
+          .select('id,name,business_name')
           .eq('role', 'client')
-          .order('business_name', { ascending: true })
-
-        if (clientsError) throw clientsError
-
-
-        setClients((clientsData || []) as any[])
-      } catch (err: any) {
-        console.error(err)
-        setError('Failed to load form data')
-      }
+          .order('business_name'),
+      ])
+      setTemplates(tplData ?? [])
+      setClients(clientData ?? [])
     }
-
-    loadData()
+    load()
   }, [])
 
+  const pickTemplate = (tpl: ServiceTemplate) => {
+    setSelected(tpl)
+    setProjectName('')
+    setStep('details')
+  }
 
   const handleCreate = async () => {
     setError(null)
-
-    if (!name.trim() || !clientId ) {
-      setError('Please fill in all fields')
-      return
-    }
-
+    if (!projectName.trim()) { setError('Please enter a project name'); return }
     setLoading(true)
 
     try {
-      // 1) Create project
-      const { data: project, error: projectError } = await supabase
+      const isBAI = selected?.slug === 'brand-alignment-intensive'
+
+      // 1. Create project
+      const { data: project, error: pErr } = await supabase
         .from('projects')
         .insert({
-          name: name.trim(),
-          client_id: clientId,
+          name: projectName.trim(),
+          client_id: clientId || null,
+          project_type: selected?.name ?? null,
+          leaders: isBAI ? DEFAULT_LEADERS : null,
         })
         .select('id')
         .single()
+      if (pErr || !project) throw pErr
 
-      if (projectError || !project) throw projectError
-
-      // 2) Create steps (phases)
-      const stepRows = defaultSteps.map((title, index) => ({
-        project_id: project.id,
-        title,
-        step_order: index + 1,
-      }))
-
-      const { data: insertedSteps, error: stepsError } = await supabase
+      // 2. Create steps from template phases
+      const phases = selected?.phases ?? ['Phase 1']
+      const { data: insertedSteps, error: sErr } = await supabase
         .from('project_steps')
-        .insert(stepRows)
-        .select('id')
+        .insert(phases.map((title, i) => ({ project_id: project.id, title, step_order: i + 1 })))
+        .select('id, title')
+      if (sErr) throw sErr
 
-      if (stepsError) throw stepsError
+      // 3. Seed tasks from sop_phases riley_does (BAI and any template with sop_phases)
+      if (selected?.sop_phases?.length && insertedSteps?.length) {
+        const taskRows: { project_id: string; project_step_id: string; title: string; is_done: boolean }[] = []
 
-      // 3) Create progress rows so checkboxes never see null
-      const progressRows = (insertedSteps || []).map((s: any) => ({
-        project_id: project.id,
-        step_id: s.id,
-        completed: false,
-      }))
+        insertedSteps.forEach((step, idx) => {
+          const sopPhase = selected.sop_phases![idx]
+          if (!sopPhase) return
+          sopPhase.riley_does.forEach((taskTitle) => {
+            taskRows.push({
+              project_id: project.id,
+              project_step_id: step.id,
+              title: taskTitle,
+              is_done: false,
+            })
+          })
+        })
 
-      if (progressRows.length) {
-        const { error: progErr } = await supabase.from('project_progress').insert(progressRows)
-        if (progErr) throw progErr
+        if (taskRows.length) {
+          const { error: tErr } = await supabase.from('project_step_tasks').insert(taskRows)
+          if (tErr) console.error('Task seed error:', tErr)
+        }
       }
 
-      // 4) Go to the project
       router.push(`/dashboard/admin/projects/${project.id}`)
-    } catch (err: any) {
-      console.error(err)
-      setError(err?.message || 'Failed to create project')
+    } catch (e: any) {
+      setError(e?.message ?? 'Failed to create project')
       setLoading(false)
     }
   }
 
-  return (
-    <div className="p-8 max-w-xl mx-auto space-y-6">
-      <div className="flex justify-between items-start">
-        <div>
-          <h1 className="text-3xl font-bold">Create New Project</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            This will auto-add your 5 phase framework.
-          </p>
+  // ── Template picker ─────────────────────────────────────────────────────────
+  if (step === 'template') {
+    return (
+      <div className="p-6 max-w-3xl mx-auto pb-24 space-y-8">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1">Unless Creative</p>
+            <h1 className="text-3xl font-bold text-neutral-900">New Project</h1>
+            <p className="text-neutral-500 text-sm mt-1">Choose a service template to get started.</p>
+          </div>
+          <button onClick={() => router.push('/dashboard/admin/projects')}
+            className="text-sm text-neutral-500 hover:text-black transition mt-1">← Back</button>
         </div>
 
-        <button
-          onClick={() => router.push('/dashboard/admin/projects')}
-          className="text-sm underline text-neutral-600 hover:text-black"
-        >
-          Back
-        </button>
+        <div className="space-y-4">
+          {templates.map((tpl) => {
+            const style = TEMPLATE_STYLE[tpl.category] ?? TEMPLATE_STYLE['stewardship']
+            const taskCount = tpl.sop_phases?.reduce((sum, p) => sum + (p.riley_does?.length ?? 0), 0) ?? 0
+            return (
+              <button key={tpl.id} onClick={() => pickTemplate(tpl)}
+                className={`w-full text-left bg-white border-2 ${style.border} rounded-2xl p-6 hover:shadow-md transition-all group`}>
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-3 mb-2">
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${style.badge}`}>
+                        {tpl.category === 'intensive' ? 'Entry Point' : tpl.category === 'system_build' ? 'System Build' : 'Stewardship'}
+                      </span>
+                      {tpl.duration && <span className="text-xs text-neutral-400">{tpl.duration}</span>}
+                      {taskCount > 0 && (
+                        <span className="text-xs text-neutral-400">{taskCount} pre-seeded tasks</span>
+                      )}
+                    </div>
+                    <h2 className="text-lg font-bold text-neutral-900 group-hover:text-black">{tpl.name}</h2>
+                    {tpl.description && <p className="text-sm text-neutral-500 mt-1">{tpl.description}</p>}
+                    {tpl.phases && (
+                      <div className="mt-3 flex items-center gap-2 flex-wrap">
+                        {tpl.phases.map((phase, i) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <span className="text-xs text-neutral-500 bg-neutral-100 border border-neutral-200 px-2 py-0.5 rounded-full">{phase}</span>
+                            {i < tpl.phases!.length - 1 && <span className="text-neutral-300 text-xs">→</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  <div className={`w-8 h-8 rounded-full ${style.accent} flex items-center justify-center shrink-0`}>
+                    <span className="text-white text-sm">→</span>
+                  </div>
+                </div>
+              </button>
+            )
+          })}
+
+          {/* Blank */}
+          <button onClick={() => { setSelected(null); setStep('details') }}
+            className="w-full text-left bg-white border-2 border-dashed border-neutral-200 rounded-2xl p-6 hover:border-neutral-400 transition group">
+            <div className="flex items-center gap-4">
+              <div className="w-8 h-8 rounded-full bg-neutral-100 flex items-center justify-center shrink-0">
+                <span className="text-neutral-500 text-sm">+</span>
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-neutral-700 group-hover:text-black">Blank Project</h2>
+                <p className="text-sm text-neutral-400">Start from scratch — no template phases or pre-seeded tasks</p>
+              </div>
+            </div>
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Project details ──────────────────────────────────────────────────────────
+  const style = selected ? TEMPLATE_STYLE[selected.category] ?? TEMPLATE_STYLE['stewardship'] : null
+  const taskCount = selected?.sop_phases?.reduce((sum, p) => sum + (p.riley_does?.length ?? 0), 0) ?? 0
+
+  return (
+    <div className="p-6 max-w-xl mx-auto pb-24 space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1">Unless Creative</p>
+          <h1 className="text-3xl font-bold text-neutral-900">Project Details</h1>
+        </div>
+        <button onClick={() => setStep('template')} className="text-sm text-neutral-500 hover:text-black transition mt-1">← Back</button>
       </div>
 
-      {error && <p className="text-red-500">{error}</p>}
+      {selected && style && (
+        <div className={`flex items-start gap-3 p-4 bg-white border-2 ${style.border} rounded-xl`}>
+          <div className={`w-2 h-2 rounded-full ${style.accent} mt-1.5 shrink-0`} />
+          <div className="flex-1">
+            <p className="text-xs text-neutral-400 uppercase tracking-wider font-medium">Template</p>
+            <p className="font-semibold text-neutral-900">{selected.name}</p>
+            {taskCount > 0 && (
+              <p className="text-xs text-neutral-400 mt-1">
+                Will auto-create {selected.phases?.length} phases with {taskCount} pre-seeded tasks from the SOP
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
-      <div className="border rounded-2xl p-6 space-y-4">
-        {/* Project Name */}
+      {error && <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-3">{error}</p>}
+
+      <div className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-5">
         <div>
-          <label className="block text-sm mb-1">Project Name</label>
+          <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider">Project Name</label>
           <input
-            className="w-full border rounded p-2"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Website Redesign"
+            autoFocus
+            value={projectName}
+            onChange={(e) => setProjectName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleCreate() }}
+            className="mt-1 w-full border border-neutral-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+            placeholder={selected ? `e.g. ${selected.name} — Sheni's Auto Trend` : 'Project name'}
           />
         </div>
 
-        {/* Client */}
         <div>
-          <label className="block text-sm mb-1">Client</label>
+          <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider">
+            Client <span className="font-normal normal-case text-neutral-400">(optional)</span>
+          </label>
           <select
-            className="w-full border rounded p-2"
             value={clientId}
             onChange={(e) => setClientId(e.target.value)}
+            className="mt-1 w-full border border-neutral-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 bg-white"
           >
-            <option value="">Select client</option>
+            <option value="">No client yet</option>
             {clients.map((c) => (
               <option key={c.id} value={c.id}>
                 {(c.business_name ?? 'Client') + (c.name ? ` — ${c.name}` : '')}
@@ -155,12 +250,30 @@ export default function NewProject() {
           </select>
         </div>
 
+        {selected?.sop_phases && (
+          <div>
+            <p className="text-xs font-bold text-neutral-500 uppercase tracking-wider mb-3">What will be created</p>
+            <div className="space-y-2">
+              {selected.sop_phases.map((phase, i) => (
+                <div key={i} className="flex items-start gap-3 p-3 bg-neutral-50 rounded-xl">
+                  <span className="text-xs font-mono text-neutral-400 w-5 shrink-0 pt-0.5">{phase.number}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-neutral-800">{phase.name}</p>
+                    <p className="text-xs text-neutral-400 mt-0.5">{phase.riley_does.length} tasks pre-seeded</p>
+                  </div>
+                  <span className="text-xs text-neutral-300">{phase.tag}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <button
           onClick={handleCreate}
-          disabled={loading}
-          className="w-full bg-black text-white py-2 rounded hover:opacity-90 disabled:opacity-50"
+          disabled={loading || !projectName.trim()}
+          className="w-full bg-black text-white py-3 rounded-xl font-medium text-sm hover:bg-neutral-800 transition disabled:opacity-50"
         >
-          {loading ? 'Creating…' : 'Create Project'}
+          {loading ? 'Creating…' : 'Create Project →'}
         </button>
       </div>
     </div>
