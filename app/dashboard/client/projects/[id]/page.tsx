@@ -119,6 +119,8 @@ export default function ClientProjectPage() {
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploadSuccess, setUploadSuccess] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
+  const [uploadMode, setUploadMode] = useState<'file' | 'link'>('file')
+  const [uploadLinkUrl, setUploadLinkUrl] = useState('')
 
   // Deliverable updating
   const [updatingDelivId, setUpdatingDelivId] = useState<string | null>(null)
@@ -234,7 +236,9 @@ export default function ClientProjectPage() {
 
   // ─── Client upload ────────────────────────────────────────────────────────
   const handleUpload = async () => {
-    if (!uploadFile || !uploadTitle.trim()) { setUploadError('Please add a title and select a file.'); return }
+    if (!uploadTitle.trim()) { setUploadError('Please add a title.'); return }
+    if (uploadMode === 'file' && !uploadFile) { setUploadError('Please select a file.'); return }
+    if (uploadMode === 'link' && !uploadLinkUrl.trim()) { setUploadError('Please enter a URL.'); return }
     setUploading(true)
     setUploadError(null)
     setUploadSuccess(false)
@@ -243,35 +247,58 @@ export default function ClientProjectPage() {
     const userId = authData?.user?.id
     if (!userId) { setUploadError('Not signed in.'); setUploading(false); return }
 
-    const ext = uploadFile.name.split('.').pop()?.toLowerCase() ?? 'bin'
-    const path = `${userId}/${projectId}/${Date.now()}.${ext}`
+    let rowData: ClientUpload | null = null
 
-    const { error: storageErr } = await supabase.storage
-      .from('client-uploads')
-      .upload(path, uploadFile, { upsert: false, contentType: uploadFile.type })
+    if (uploadMode === 'link') {
+      // Link — no storage upload needed, store URL as storage_path with type 'link'
+      const { data, error: dbErr } = await supabase
+        .from('client_uploads')
+        .insert({
+          project_id: projectId,
+          uploaded_by: userId,
+          title: uploadTitle.trim(),
+          storage_path: uploadLinkUrl.trim(),
+          file_type: 'link',
+          file_size_bytes: null,
+          note: uploadNote.trim() || null,
+        })
+        .select()
+        .single()
+      if (dbErr || !data) { setUploadError('Could not save link.'); setUploading(false); return }
+      rowData = data as ClientUpload
+    } else {
+      const ext = uploadFile!.name.split('.').pop()?.toLowerCase() ?? 'bin'
+      const path = `${userId}/${projectId}/${Date.now()}.${ext}`
 
-    if (storageErr) { setUploadError('Upload failed. Please try again.'); setUploading(false); return }
+      const { error: storageErr } = await supabase.storage
+        .from('client-uploads')
+        .upload(path, uploadFile!, { upsert: false, contentType: uploadFile!.type })
 
-    const { data: rowData, error: dbErr } = await supabase
-      .from('client_uploads')
-      .insert({
-        project_id: projectId,
-        uploaded_by: userId,
-        title: uploadTitle.trim(),
-        storage_path: path,
-        file_type: uploadFile.type,
-        file_size_bytes: uploadFile.size,
-        note: uploadNote.trim() || null,
-      })
-      .select()
-      .single()
+      if (storageErr) { setUploadError('Upload failed. Please try again.'); setUploading(false); return }
 
-    if (dbErr || !rowData) { setUploadError('Saved to storage but could not record the file.'); setUploading(false); return }
+      const { data, error: dbErr } = await supabase
+        .from('client_uploads')
+        .insert({
+          project_id: projectId,
+          uploaded_by: userId,
+          title: uploadTitle.trim(),
+          storage_path: path,
+          file_type: uploadFile!.type,
+          file_size_bytes: uploadFile!.size,
+          note: uploadNote.trim() || null,
+        })
+        .select()
+        .single()
 
-    setClientUploads((prev) => [rowData as ClientUpload, ...prev])
+      if (dbErr || !data) { setUploadError('Saved to storage but could not record the file.'); setUploading(false); return }
+      rowData = data as ClientUpload
+    }
+
+    setClientUploads((prev) => [rowData!, ...prev])
     setUploadTitle('')
     setUploadNote('')
     setUploadFile(null)
+    setUploadLinkUrl('')
     if (fileInputRef.current) fileInputRef.current.value = ''
     setUploadSuccess(true)
     setTimeout(() => setUploadSuccess(false), 4000)
@@ -416,41 +443,6 @@ export default function ClientProjectPage() {
               </div>
             )}
 
-            {/* Phase Progress (read-only) */}
-            <div className="bg-white border border-neutral-200 rounded-2xl p-5">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-0.5">Phase Progress</p>
-                  <h3 className="font-bold text-neutral-900">{currentStep?.title ?? 'No active phase'}</h3>
-                </div>
-                {currentStep && currentStep.project_step_tasks.length > 0 && (
-                  <span className="text-xs text-neutral-500">
-                    {currentStep.project_step_tasks.filter((t) => t.is_done).length}/{currentStep.project_step_tasks.length} done
-                  </span>
-                )}
-              </div>
-
-              {(!currentStep || currentStep.project_step_tasks.length === 0) ? (
-                <p className="text-sm text-neutral-400">No tasks in this phase yet.</p>
-              ) : (
-                <div className="space-y-2">
-                  {currentStep.project_step_tasks.map((task) => (
-                    <div key={task.id}
-                      className={`flex items-center gap-3 px-4 py-3 rounded-xl border ${task.is_done ? 'border-neutral-100 bg-neutral-50' : 'border-neutral-200'}`}>
-                      {/* Read-only indicator */}
-                      <div className="w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center"
-                        style={{ borderColor: task.is_done ? '#7EC8A0' : '#d4d4d4', background: task.is_done ? '#7EC8A015' : 'transparent' }}>
-                        {task.is_done && <span className="text-[10px] font-bold" style={{ color: '#7EC8A0' }}>✓</span>}
-                      </div>
-                      <p className={`text-sm flex-1 ${task.is_done ? 'line-through text-neutral-400' : 'text-neutral-700'}`}>
-                        {task.title}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
             {/* All Phases */}
             {stepsSorted.length > 1 && (
               <div className="bg-white border border-neutral-200 rounded-2xl p-5">
@@ -569,15 +561,62 @@ export default function ClientProjectPage() {
               </div>
 
               <div className="space-y-3">
+                {/* Mode toggle */}
+                <div className="flex rounded-xl border border-neutral-200 overflow-hidden">
+                  <button
+                    onClick={() => setUploadMode('file')}
+                    className="flex-1 text-sm font-medium py-2.5 transition"
+                    style={{ background: uploadMode === 'file' ? '#1A3428' : 'transparent', color: uploadMode === 'file' ? '#fff' : '#666' }}
+                  >
+                    ⬆ Upload File
+                  </button>
+                  <button
+                    onClick={() => setUploadMode('link')}
+                    className="flex-1 text-sm font-medium py-2.5 transition"
+                    style={{ background: uploadMode === 'link' ? '#1A3428' : 'transparent', color: uploadMode === 'link' ? '#fff' : '#666' }}
+                  >
+                    ↗ Attach Link
+                  </button>
+                </div>
+
                 <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-neutral-500 block mb-1">File title <span className="text-red-400">*</span></label>
+                  <label className="text-xs font-bold uppercase tracking-wider text-neutral-500 block mb-1">
+                    {uploadMode === 'link' ? 'Link title' : 'File title'} <span className="text-red-400">*</span>
+                  </label>
                   <input
                     value={uploadTitle}
                     onChange={(e) => setUploadTitle(e.target.value)}
-                    placeholder="e.g. Current logo package, Brand guidelines PDF"
+                    placeholder={uploadMode === 'link' ? 'e.g. Current website, Brand inspiration board' : 'e.g. Current logo package, Brand guidelines PDF'}
                     className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
                   />
                 </div>
+
+                {uploadMode === 'link' ? (
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-neutral-500 block mb-1">URL <span className="text-red-400">*</span></label>
+                    <input
+                      value={uploadLinkUrl}
+                      onChange={(e) => setUploadLinkUrl(e.target.value)}
+                      placeholder="https://www.figma.com/… or any link"
+                      className="w-full border border-neutral-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/10"
+                    />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="text-xs font-bold uppercase tracking-wider text-neutral-500 block mb-1">File <span className="text-red-400">*</span></label>
+                    <input ref={fileInputRef} type="file" className="hidden" onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)} />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full border-2 border-dashed border-neutral-200 rounded-xl px-4 py-4 text-sm text-neutral-500 hover:border-neutral-400 hover:text-neutral-700 transition text-left"
+                    >
+                      {uploadFile ? (
+                        <span className="font-medium text-neutral-800">
+                          {uploadFile.name} <span className="font-normal text-neutral-400">({formatBytes(uploadFile.size)})</span>
+                        </span>
+                      ) : '+ Choose file — images, PDFs, ZIP, fonts, and more'}
+                    </button>
+                  </div>
+                )}
 
                 <div>
                   <label className="text-xs font-bold uppercase tracking-wider text-neutral-500 block mb-1">Note (optional)</label>
@@ -589,41 +628,18 @@ export default function ClientProjectPage() {
                   />
                 </div>
 
-                {/* File picker */}
-                <div>
-                  <label className="text-xs font-bold uppercase tracking-wider text-neutral-500 block mb-1">File <span className="text-red-400">*</span></label>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    className="hidden"
-                    onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
-                  />
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-full border-2 border-dashed border-neutral-200 rounded-xl px-4 py-4 text-sm text-neutral-500 hover:border-neutral-400 hover:text-neutral-700 transition text-left"
-                  >
-                    {uploadFile ? (
-                      <span className="font-medium text-neutral-800">
-                        {uploadFile.name} <span className="font-normal text-neutral-400">({formatBytes(uploadFile.size)})</span>
-                      </span>
-                    ) : (
-                      '+ Choose file — images, PDFs, ZIP, fonts, and more'
-                    )}
-                  </button>
-                </div>
-
                 {uploadError && <p className="text-xs text-red-500">{uploadError}</p>}
                 {uploadSuccess && (
-                  <p className="text-xs font-semibold" style={{ color: '#7EC8A0' }}>✓ Uploaded! Riley has been notified.</p>
+                  <p className="text-xs font-semibold" style={{ color: '#7EC8A0' }}>✓ Sent! Riley will have it waiting for her.</p>
                 )}
 
                 <button
                   onClick={handleUpload}
-                  disabled={uploading || !uploadFile || !uploadTitle.trim()}
+                  disabled={uploading || !uploadTitle.trim() || (uploadMode === 'file' && !uploadFile) || (uploadMode === 'link' && !uploadLinkUrl.trim())}
                   className="w-full text-sm font-semibold py-3 rounded-xl text-white transition disabled:opacity-40"
                   style={{ background: '#F04D3D' }}
                 >
-                  {uploading ? 'Uploading…' : 'Send to Riley →'}
+                  {uploading ? (uploadMode === 'link' ? 'Saving…' : 'Uploading…') : 'Send to Riley →'}
                 </button>
               </div>
             </div>
@@ -642,7 +658,7 @@ export default function ClientProjectPage() {
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-neutral-800 truncate">{upload.title}</p>
                         <p className="text-xs text-neutral-400 mt-0.5">
-                          {upload.file_type?.split('/').pop()?.toUpperCase() ?? 'FILE'}
+                          {upload.file_type === 'link' ? 'LINK' : upload.file_type?.split('/').pop()?.toUpperCase() ?? 'FILE'}
                           {upload.file_size_bytes ? ` · ${formatBytes(upload.file_size_bytes)}` : ''}
                           {' · '}{formatDate(upload.created_at)}
                         </p>
