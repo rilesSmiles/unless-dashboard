@@ -141,14 +141,14 @@ export default function ProfilePage() {
     <div className="min-h-screen bg-neutral-50 pb-32">
 
       {/* Header */}
-      <div className="bg-black px-6 pt-10 pb-10">
+      <div className="px-6 pt-10 pb-10" style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 60%)' }}>
         <div className="max-w-2xl mx-auto flex items-end gap-6">
 
           {/* Avatar */}
           <div className="relative shrink-0">
             <div
               onClick={() => fileInputRef.current?.click()}
-              className="w-20 h-20 rounded-2xl overflow-hidden cursor-pointer border-2 border-neutral-800 hover:border-amber-400 transition group relative"
+              className="w-20 h-20 rounded-2xl overflow-hidden cursor-pointer border-2 border-neutral-800 hover:border-[#F04D3D] transition group relative"
             >
               {avatarUrl ? (
                 <img src={avatarUrl} alt={name} className="w-full h-full object-cover" />
@@ -176,7 +176,7 @@ export default function ProfilePage() {
           <div className="flex-1 pb-1">
             <div className="flex items-center gap-2 mb-1">
               {profile.role && (
-                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[#F04D3D]/20 text-[#ffb0a8] border border-[#F04D3D]/30">
                   {roleLabel(profile.role)}
                 </span>
               )}
@@ -222,7 +222,7 @@ export default function ProfilePage() {
           <button
             onClick={handleSave}
             disabled={saving}
-            className="bg-black text-white text-sm font-medium px-6 py-2.5 rounded-xl hover:bg-neutral-800 transition disabled:opacity-50 flex items-center gap-2"
+            className="bg-[#F04D3D] text-white text-sm font-medium px-6 py-2.5 rounded-xl hover:bg-[#d43c2d] transition disabled:opacity-50 flex items-center gap-2"
           >
             {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save Changes'}
           </button>
@@ -240,7 +240,7 @@ export default function ProfilePage() {
               <span className="text-neutral-500">Role</span>
               <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                 profile.role === 'admin'
-                  ? 'bg-amber-50 text-amber-700'
+                  ? 'bg-[#F04D3D]/10 text-[#F04D3D]'
                   : profile.role === 'contractor'
                     ? 'bg-blue-50 text-blue-700'
                     : 'bg-neutral-100 text-neutral-600'

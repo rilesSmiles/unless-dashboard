@@ -111,14 +111,14 @@ export default function TemplatesPage() {
 
   return (
     <div className="min-h-screen pb-32" style={{ background: '#F7F3EC' }}>
-      <div className="px-8 pt-12 pb-8 border-b" style={{ borderColor: '#1a1a1a20' }}>
-        <p style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.18em', color: '#8a7a5a', textTransform: 'uppercase', marginBottom: 8 }}>
+      <div className="px-8 pt-12 pb-8" style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 60%)' }}>
+        <p style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.18em', color: '#7EC8A0', textTransform: 'uppercase', marginBottom: 8 }}>
           Unless Creative · Service Library
         </p>
-        <h1 style={{ fontFamily: 'Georgia, serif', fontSize: 36, fontWeight: 400, color: '#1a1a1a', lineHeight: 1.1, marginBottom: 12 }}>
+        <h1 style={{ fontFamily: 'var(--font-fraunces), Georgia, serif', fontSize: 36, fontWeight: 400, color: '#fff', lineHeight: 1.1, marginBottom: 12 }}>
           Templates
         </h1>
-        <p style={{ fontFamily: 'Georgia, serif', fontSize: 15, color: '#5a5040', maxWidth: 520, lineHeight: 1.6 }}>
+        <p style={{ fontFamily: 'Georgia, serif', fontSize: 15, color: '#9a9a8a', maxWidth: 520, lineHeight: 1.6 }}>
           The Unless service suite — each with its own delivery framework, SOP, and question guides. These are your repeatable systems.
         </p>
       </div>
@@ -157,7 +157,7 @@ function TemplateCard({ template: t, index: i, onClick }: { template: ServiceTem
       <div className="flex items-start justify-between gap-4">
         <div className="flex-1">
           <div className="flex items-center gap-3 mb-3 flex-wrap">
-            <span style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', background: '#C9A84C18', color: '#8a6a1a', border: '1px solid #C9A84C40', borderRadius: 20, padding: '3px 10px' }}>
+            <span style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', background: '#F04D3D18', color: '#b33628', border: '1px solid #F04D3D40', borderRadius: 20, padding: '3px 10px' }}>
               {CATEGORY_LABELS[t.category] ?? t.category}
             </span>
             <span style={{ fontFamily: 'Georgia, serif', fontSize: 12, color: '#9a8a6a' }}>{t.duration}</span>
@@ -179,8 +179,8 @@ function TemplateCard({ template: t, index: i, onClick }: { template: ServiceTem
             </div>
           )}
         </div>
-        <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 4 }}>
-          <span style={{ color: '#F7F3EC', fontSize: 18, lineHeight: 1 }}>→</span>
+        <div style={{ width: 36, height: 36, borderRadius: '50%', background: '#F04D3D', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 4 }}>
+          <span style={{ color: '#fff', fontSize: 18, lineHeight: 1 }}>→</span>
         </div>
       </div>
     </button>
@@ -208,22 +208,23 @@ function DetailView({ template: t, activeTab, setActiveTab, expandedPhase, setEx
 
   return (
     <div className="min-h-screen pb-32" style={{ background: '#F7F3EC' }}>
-      <div className="px-8 pt-10 pb-0">
-        <button onClick={onBack} style={{ fontFamily: 'Georgia, serif', fontSize: 12, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8a7a5a', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 6 }}>
+      {/* Green gradient header */}
+      <div className="px-8 pt-10 pb-8" style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 60%)' }}>
+        <button onClick={onBack} style={{ fontFamily: 'Georgia, serif', fontSize: 12, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#7EC8A0', background: 'none', border: 'none', cursor: 'pointer', padding: 0, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 6 }}>
           ← All Templates
         </button>
         <div className="flex items-center gap-3 mb-3 flex-wrap">
-          <span style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', background: '#C9A84C18', color: '#8a6a1a', border: '1px solid #C9A84C40', borderRadius: 20, padding: '3px 10px' }}>
+          <span style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.14em', textTransform: 'uppercase', background: '#F04D3D30', color: '#ffb0a8', border: '1px solid #F04D3D40', borderRadius: 20, padding: '3px 10px' }}>
             {CATEGORY_LABELS[t.category] ?? t.category}
           </span>
-          <span style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: '#9a8a6a' }}>{t.duration}</span>
+          <span style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: '#9a9a8a' }}>{t.duration}</span>
         </div>
-        <h1 style={{ fontFamily: 'Georgia, serif', fontSize: 32, fontWeight: 400, color: '#1a1a1a', lineHeight: 1.1, marginBottom: 10 }}>{t.name}</h1>
-        <p style={{ fontFamily: 'Georgia, serif', fontSize: 15, color: '#5a5040', lineHeight: 1.65, maxWidth: 580 }}>{t.description}</p>
+        <h1 style={{ fontFamily: 'var(--font-fraunces), Georgia, serif', fontSize: 32, fontWeight: 400, color: '#fff', lineHeight: 1.1, marginBottom: 10 }}>{t.name}</h1>
+        <p style={{ fontFamily: 'Georgia, serif', fontSize: 15, color: '#9a9a8a', lineHeight: 1.65, maxWidth: 580 }}>{t.description}</p>
 
-        <div className="flex gap-0 mt-8 border-b" style={{ borderColor: '#1a1a1a15' }}>
+        <div className="flex gap-0 mt-8 border-b" style={{ borderColor: '#ffffff15' }}>
           {tabs.map(tab => (
-            <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: activeTab === tab.id ? '#1a1a1a' : '#9a8a6a', background: 'none', border: 'none', borderBottom: activeTab === tab.id ? '2px solid #1a1a1a' : '2px solid transparent', padding: '10px 20px 12px', cursor: 'pointer', marginBottom: -1, transition: 'color 0.15s' }}>
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: activeTab === tab.id ? '#fff' : '#7a9a8a', background: 'none', border: 'none', borderBottom: activeTab === tab.id ? '2px solid #F04D3D' : '2px solid transparent', padding: '10px 20px 12px', cursor: 'pointer', marginBottom: -1, transition: 'color 0.15s' }}>
               {tab.label}
             </button>
           ))}
@@ -251,7 +252,7 @@ function OverviewTab({ template: t }: { template: ServiceTemplate }) {
           <div className="space-y-2 mt-4">
             {t.phases.map((phase, i) => (
               <div key={i} className="flex items-center gap-4" style={{ background: '#fff', borderRadius: 12, padding: '14px 20px', border: '1px solid #1a1a1a10' }}>
-                <span style={{ fontFamily: 'Georgia, serif', fontSize: 11, color: '#C9A84C', letterSpacing: '0.1em', minWidth: 24 }}>{String(i + 1).padStart(2, '0')}</span>
+                <span style={{ fontFamily: 'Georgia, serif', fontSize: 11, color: '#F04D3D', letterSpacing: '0.1em', minWidth: 24 }}>{String(i + 1).padStart(2, '0')}</span>
                 <span style={{ fontFamily: 'Georgia, serif', fontSize: 15, color: '#1a1a1a' }}>{phase}</span>
               </div>
             ))}
@@ -283,7 +284,7 @@ function OverviewTab({ template: t }: { template: ServiceTemplate }) {
 function StatCard({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ background: '#1a1a1a', borderRadius: 12, padding: '16px 18px' }}>
-      <p style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C9A84C', marginBottom: 6 }}>{label}</p>
+      <p style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#F04D3D', marginBottom: 6 }}>{label}</p>
       <p style={{ fontFamily: 'Georgia, serif', fontSize: 15, color: '#F7F3EC', lineHeight: 1.3 }}>{value}</p>
     </div>
   )
@@ -304,11 +305,11 @@ function SopTab({ phases, expanded, setExpanded }: { phases: SopPhase[]; expande
             <button onClick={() => setExpanded(isOpen ? null : phase.number)} className="w-full text-left" style={{ padding: '20px 24px', background: 'none', border: 'none', cursor: 'pointer' }}>
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-start gap-4">
-                  <span style={{ fontFamily: 'Georgia, serif', fontSize: 22, color: '#C9A84C', fontWeight: 400, minWidth: 32, lineHeight: 1 }}>{phase.number}</span>
+                  <span style={{ fontFamily: 'Georgia, serif', fontSize: 22, color: '#F04D3D', fontWeight: 400, minWidth: 32, lineHeight: 1 }}>{phase.number}</span>
                   <div>
                     <div className="flex items-center gap-2 mb-1">
                       <h3 style={{ fontFamily: 'Georgia, serif', fontSize: 17, fontWeight: 400, color: '#1a1a1a' }}>{phase.name}</h3>
-                      <span style={{ fontFamily: 'Georgia, serif', fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8a6a1a', background: '#C9A84C15', border: '1px solid #C9A84C30', borderRadius: 20, padding: '2px 8px' }}>{phase.tag}</span>
+                      <span style={{ fontFamily: 'Georgia, serif', fontSize: 10, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#b33628', background: '#F04D3D15', border: '1px solid #F04D3D30', borderRadius: 20, padding: '2px 8px' }}>{phase.tag}</span>
                     </div>
                     <p style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: '#8a7a5a' }}>{phase.duration} · {phase.who}</p>
                   </div>
@@ -321,11 +322,11 @@ function SopTab({ phases, expanded, setExpanded }: { phases: SopPhase[]; expande
                 <p style={{ fontFamily: 'Georgia, serif', fontSize: 14, color: '#4a3a20', lineHeight: 1.7, marginTop: 16, marginBottom: 20 }}>{phase.description}</p>
                 <div className="grid grid-cols-2 gap-4 mb-5">
                   <div style={{ background: '#F7F3EC', borderRadius: 10, padding: '14px 16px' }}>
-                    <p style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C9A84C', marginBottom: 10 }}>Riley Does</p>
+                    <p style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#F04D3D', marginBottom: 10 }}>Riley Does</p>
                     <ul className="space-y-2">
                       {phase.riley_does.map((item, i) => (
                         <li key={i} style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: '#3a2a10', lineHeight: 1.55, display: 'flex', gap: 8 }}>
-                          <span style={{ color: '#C9A84C', flexShrink: 0 }}>—</span>{item}
+                          <span style={{ color: '#F04D3D', flexShrink: 0 }}>—</span>{item}
                         </li>
                       ))}
                     </ul>
@@ -342,12 +343,12 @@ function SopTab({ phases, expanded, setExpanded }: { phases: SopPhase[]; expande
                   </div>
                 </div>
                 <div style={{ background: '#1a1a1a', borderRadius: 10, padding: '14px 18px', marginBottom: 12 }}>
-                  <p style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C9A84C', marginBottom: 6 }}>Produces</p>
+                  <p style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#F04D3D', marginBottom: 6 }}>Produces</p>
                   <p style={{ fontFamily: 'Georgia, serif', fontSize: 14, color: '#F7F3EC', lineHeight: 1.6 }}>{phase.produces}</p>
                 </div>
                 {phase.riley_note && (
-                  <div style={{ borderLeft: '3px solid #C9A84C', paddingLeft: 14 }}>
-                    <p style={{ fontFamily: 'Georgia, serif', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#C9A84C', marginBottom: 4 }}>Riley's Note</p>
+                  <div style={{ borderLeft: '3px solid #F04D3D', paddingLeft: 14 }}>
+                    <p style={{ fontFamily: 'Georgia, serif', fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#F04D3D', marginBottom: 4 }}>Riley's Note</p>
                     <p style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: '#6a5a40', lineHeight: 1.65, fontStyle: 'italic' }}>{phase.riley_note}</p>
                   </div>
                 )}
@@ -376,7 +377,7 @@ function IntakeTab({ questions, expanded, setExpanded }: { questions: IntakeQues
               <button onClick={() => setExpanded(isOpen ? null : i)} className="w-full text-left" style={{ padding: '18px 22px', background: 'none', border: 'none', cursor: 'pointer' }}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3">
-                    <span style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: '#C9A84C', minWidth: 22, flexShrink: 0, marginTop: 1 }}>{String(i + 1).padStart(2, '0')}</span>
+                    <span style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: '#F04D3D', minWidth: 22, flexShrink: 0, marginTop: 1 }}>{String(i + 1).padStart(2, '0')}</span>
                     <div>
                       <p style={{ fontFamily: 'Georgia, serif', fontSize: 15, color: '#1a1a1a', lineHeight: 1.5, marginBottom: 4 }}>{q.question}</p>
                       <CategoryPill category={q.category} />
@@ -417,7 +418,7 @@ function InterviewTab({ questions, expanded, setExpanded }: { questions: Intervi
               <button onClick={() => setExpanded(isOpen ? null : i)} className="w-full text-left" style={{ padding: '18px 22px', background: 'none', border: 'none', cursor: 'pointer' }}>
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex items-start gap-3">
-                    <span style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: '#C9A84C', minWidth: 22, flexShrink: 0, marginTop: 1 }}>{String(i + 1).padStart(2, '0')}</span>
+                    <span style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: '#F04D3D', minWidth: 22, flexShrink: 0, marginTop: 1 }}>{String(i + 1).padStart(2, '0')}</span>
                     <div>
                       <p style={{ fontFamily: 'Georgia, serif', fontSize: 15, color: '#1a1a1a', lineHeight: 1.5, marginBottom: 4 }}>"{q.question}"</p>
                       <CategoryPill category={q.category} />
@@ -441,14 +442,14 @@ function InterviewTab({ questions, expanded, setExpanded }: { questions: Intervi
                     <div className="space-y-2">
                       {q.probes.map((probe, j) => (
                         <div key={j} style={{ background: '#F7F3EC', borderRadius: 8, padding: '10px 14px', fontFamily: 'Georgia, serif', fontSize: 13, color: '#3a2a10', lineHeight: 1.55, fontStyle: 'italic', display: 'flex', gap: 8 }}>
-                          <span style={{ color: '#C9A84C', flexShrink: 0, fontStyle: 'normal' }}>{j + 1}.</span>
+                          <span style={{ color: '#F04D3D', flexShrink: 0, fontStyle: 'normal' }}>{j + 1}.</span>
                           "{probe}"
                         </div>
                       ))}
                     </div>
                   </div>
                   <div style={{ background: '#1a1a1a', borderRadius: 10, padding: '14px 18px' }}>
-                    <p style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#C9A84C', marginBottom: 6 }}>In the Room</p>
+                    <p style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#F04D3D', marginBottom: 6 }}>In the Room</p>
                     <p style={{ fontFamily: 'Georgia, serif', fontSize: 13, color: '#F7F3EC', lineHeight: 1.65 }}>{q.guidance}</p>
                   </div>
                 </div>
@@ -469,7 +470,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 function CategoryPill({ category }: { category: string }) {
   return (
-    <span style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7a6a3a', background: '#C9A84C15', border: '1px solid #C9A84C25', borderRadius: 20, padding: '2px 9px', display: 'inline-block' }}>
+    <span style={{ fontFamily: 'Georgia, serif', fontSize: 11, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#b33628', background: '#F04D3D15', border: '1px solid #F04D3D25', borderRadius: 20, padding: '2px 9px', display: 'inline-block' }}>
       {category}
     </span>
   )

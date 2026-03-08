@@ -11,7 +11,7 @@ type Project = {
 }
 
 const TYPE_BADGE: Record<string, { bg: string; text: string }> = {
-  'Brand Alignment Intensive': { bg: 'bg-amber-50',  text: 'text-amber-800'  },
+  'Brand Alignment Intensive': { bg: 'bg-[#F04D3D]/10', text: 'text-[#F04D3D]' },
   'Brand System Build':        { bg: 'bg-stone-100', text: 'text-stone-700'  },
   'Brand Stewardship Retainer':{ bg: 'bg-neutral-100',text:'text-neutral-700'},
 }
@@ -82,23 +82,26 @@ export default function ProjectsPage() {
   if (loading) return <div className="p-8 text-neutral-400 text-sm">Loading projects…</div>
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-8 pb-28">
+    <div className="min-h-screen bg-neutral-50 pb-28">
       {/* Header */}
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1">Unless Creative</p>
-          <h1 className="text-3xl font-bold text-neutral-900">Projects</h1>
-          <p className="text-neutral-500 text-sm mt-1">
-            {projects.length === 0 ? 'No projects yet' : `${projects.length} project${projects.length === 1 ? '' : 's'}`}
-          </p>
+      <div className="px-6 pt-10 pb-8" style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 60%)' }}>
+        <div className="max-w-5xl mx-auto flex items-end justify-between gap-4">
+          <div>
+            <p className="text-xs font-mono text-[#7EC8A0] uppercase tracking-widest mb-2">Unless Creative</p>
+            <h1 className="text-3xl text-white leading-tight">Projects</h1>
+            <p className="text-neutral-400 text-sm mt-1">
+              {projects.length === 0 ? 'No projects yet' : `${projects.length} project${projects.length === 1 ? '' : 's'}`}
+            </p>
+          </div>
+          <button
+            onClick={() => router.push('/dashboard/admin/projects/new')}
+            className="bg-[#F04D3D] text-white text-sm font-medium px-5 py-2.5 rounded-xl hover:bg-[#d43c2d] transition shrink-0"
+          >
+            + New Project
+          </button>
         </div>
-        <button
-          onClick={() => router.push('/dashboard/admin/projects/new')}
-          className="bg-black text-white text-sm font-medium px-5 py-2.5 rounded-xl hover:bg-neutral-800 transition shrink-0"
-        >
-          + New Project
-        </button>
       </div>
+    <div className="p-6 max-w-5xl mx-auto space-y-8">
 
       {/* Recently viewed */}
       {recent.length > 0 && (
@@ -129,7 +132,7 @@ export default function ProjectsPage() {
           {filterTypes.map((f) => (
             <button key={f} onClick={() => setFilter(f)}
               className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition ${
-                filter === f ? 'bg-black text-white border-black' : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-400'
+                filter === f ? 'bg-[#F04D3D] text-white border-[#F04D3D]' : 'bg-white text-neutral-600 border-neutral-200 hover:border-neutral-400'
               }`}>
               {f === 'All' ? `All (${projects.length})` : f.replace('Brand ', '').replace(' Intensive', '').replace(' Build', '').replace(' Retainer', '')}
             </button>
@@ -157,7 +160,7 @@ export default function ProjectsPage() {
               className="w-full text-left bg-white border border-neutral-200 rounded-2xl px-6 py-5 hover:border-neutral-400 hover:shadow-sm transition-all group flex items-center gap-5">
               {/* Color pip */}
               <div className={`w-1.5 h-10 rounded-full shrink-0 ${
-                p.project_type === 'Brand Alignment Intensive' ? 'bg-amber-400' :
+                p.project_type === 'Brand Alignment Intensive' ? 'bg-[#F04D3D]' :
                 p.project_type === 'Brand System Build' ? 'bg-stone-400' : 'bg-neutral-300'
               }`} />
               <div className="flex-1 min-w-0">
@@ -175,6 +178,7 @@ export default function ProjectsPage() {
           ))}
         </div>
       )}
+    </div>
     </div>
   )
 }

@@ -17,7 +17,7 @@ type ServiceTemplate = {
 }
 
 const TEMPLATE_STYLE: Record<string, { border: string; badge: string; accent: string }> = {
-  intensive:    { border: 'border-amber-300',   badge: 'bg-amber-50 text-amber-800 border-amber-200',    accent: 'bg-amber-400'   },
+  intensive:    { border: 'border-[#F04D3D]/50', badge: 'bg-[#F04D3D]/10 text-[#b33628] border-[#F04D3D]/30', accent: 'bg-[#F04D3D]' },
   system_build: { border: 'border-stone-300',   badge: 'bg-stone-50 text-stone-800 border-stone-200',    accent: 'bg-stone-500'   },
   stewardship:  { border: 'border-neutral-300', badge: 'bg-neutral-50 text-neutral-700 border-neutral-200', accent: 'bg-neutral-500' },
 }
@@ -120,16 +120,19 @@ export default function NewProjectPage() {
   // ── Template picker ─────────────────────────────────────────────────────────
   if (step === 'template') {
     return (
-      <div className="p-6 max-w-3xl mx-auto pb-24 space-y-8">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1">Unless Creative</p>
-            <h1 className="text-3xl font-bold text-neutral-900">New Project</h1>
-            <p className="text-neutral-500 text-sm mt-1">Choose a service template to get started.</p>
+      <div className="min-h-screen bg-neutral-50 pb-24">
+        <div className="px-6 pt-10 pb-8" style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 60%)' }}>
+          <div className="max-w-3xl mx-auto flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-mono text-[#7EC8A0] uppercase tracking-widest mb-2">Unless Creative</p>
+              <h1 className="text-3xl text-white leading-tight">New Project</h1>
+              <p className="text-neutral-400 text-sm mt-1">Choose a service template to get started.</p>
+            </div>
+            <button onClick={() => router.push('/dashboard/admin/projects')}
+              className="text-sm text-[#7EC8A0] hover:text-white transition mt-1">← Back</button>
           </div>
-          <button onClick={() => router.push('/dashboard/admin/projects')}
-            className="text-sm text-neutral-500 hover:text-black transition mt-1">← Back</button>
         </div>
+      <div className="p-6 max-w-3xl mx-auto space-y-8">
 
         <div className="space-y-4">
           {templates.map((tpl) => {
@@ -185,6 +188,7 @@ export default function NewProjectPage() {
           </button>
         </div>
       </div>
+      </div>
     )
   }
 
@@ -193,14 +197,17 @@ export default function NewProjectPage() {
   const taskCount = selected?.sop_phases?.reduce((sum, p) => sum + (p.riley_does?.length ?? 0), 0) ?? 0
 
   return (
-    <div className="p-6 max-w-xl mx-auto pb-24 space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1">Unless Creative</p>
-          <h1 className="text-3xl font-bold text-neutral-900">Project Details</h1>
+    <div className="min-h-screen bg-neutral-50 pb-24">
+      <div className="px-6 pt-10 pb-8" style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 60%)' }}>
+        <div className="max-w-xl mx-auto flex items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-mono text-[#7EC8A0] uppercase tracking-widest mb-2">Unless Creative</p>
+            <h1 className="text-3xl text-white leading-tight">Project Details</h1>
+          </div>
+          <button onClick={() => setStep('template')} className="text-sm text-[#7EC8A0] hover:text-white transition mt-1">← Back</button>
         </div>
-        <button onClick={() => setStep('template')} className="text-sm text-neutral-500 hover:text-black transition mt-1">← Back</button>
       </div>
+    <div className="p-6 max-w-xl mx-auto space-y-6">
 
       {selected && style && (
         <div className={`flex items-start gap-3 p-4 bg-white border-2 ${style.border} rounded-xl`}>
@@ -271,10 +278,11 @@ export default function NewProjectPage() {
         <button
           onClick={handleCreate}
           disabled={loading || !projectName.trim()}
-          className="w-full bg-black text-white py-3 rounded-xl font-medium text-sm hover:bg-neutral-800 transition disabled:opacity-50"
+          className="w-full bg-[#F04D3D] text-white py-3 rounded-xl font-medium text-sm hover:bg-[#d43c2d] transition disabled:opacity-50"
         >
           {loading ? 'Creating…' : 'Create Project →'}
         </button>
+      </div>
       </div>
     </div>
   )

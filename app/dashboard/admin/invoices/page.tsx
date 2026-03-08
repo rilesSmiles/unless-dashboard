@@ -99,12 +99,12 @@ export default function InvoicesHubPage() {
     <div className="min-h-screen bg-neutral-50 pb-32">
 
       {/* Header */}
-      <div className="bg-black px-6 pt-10 pb-0">
+      <div className="px-6 pt-10 pb-0" style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 60%)' }}>
         <div className="max-w-5xl mx-auto">
           <div className="flex items-end justify-between gap-4 pb-6">
             <div>
-              <p className="text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1">Unless Creative</p>
-              <h1 className="text-3xl font-bold text-white">Billing</h1>
+              <p className="text-xs font-mono text-[#7EC8A0] uppercase tracking-widest mb-2">Unless Creative</p>
+              <h1 className="text-3xl text-white leading-tight">Billing</h1>
             </div>
             <div className="flex items-center gap-3 pb-1">
               <button onClick={() => setShowNewQuote(true)}
@@ -112,7 +112,7 @@ export default function InvoicesHubPage() {
                 + New Quote
               </button>
               <button onClick={() => setShowNewInvoice(true)}
-                className="text-sm font-medium px-4 py-2 bg-amber-400 text-black rounded-xl hover:bg-amber-300 transition">
+                className="text-sm font-medium px-4 py-2 bg-[#F04D3D] text-white rounded-xl hover:bg-[#d43c2d] transition">
                 + New Invoice
               </button>
             </div>
@@ -138,7 +138,7 @@ export default function InvoicesHubPage() {
             {(['invoices', 'quotes'] as const).map((t) => (
               <button key={t} onClick={() => setTab(t)}
                 className={`px-5 py-3 text-sm font-medium border-b-2 capitalize transition -mb-px ${
-                  tab === t ? 'border-amber-400 text-amber-400' : 'border-transparent text-neutral-500 hover:text-neutral-300'
+                  tab === t ? 'border-[#F04D3D] text-[#F04D3D]' : 'border-transparent text-neutral-500 hover:text-neutral-300'
                 }`}>
                 {t} ({t === 'invoices' ? invoices.length : quotes.length})
               </button>

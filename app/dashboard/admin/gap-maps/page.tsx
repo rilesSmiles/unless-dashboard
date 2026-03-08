@@ -96,24 +96,27 @@ export default function GapMapsPage() {
   if (loading) return <div className="p-8 text-neutral-400 text-sm">Loading gap maps…</div>
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-8 pb-24">
+    <div className="min-h-screen bg-neutral-50 pb-24">
       {/* Header */}
-      <div className="flex items-end justify-between gap-4">
-        <div>
-          <p className="text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1">Unless Creative</p>
-          <h1 className="text-3xl font-bold text-neutral-900">Gap Maps</h1>
-          <p className="text-neutral-500 text-sm mt-1">
-            Phase 03 of the Brand Alignment Intensive — capture, score, and synthesize.
-          </p>
+      <div className="px-6 pt-10 pb-8" style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 60%)' }}>
+        <div className="max-w-4xl mx-auto flex items-end justify-between gap-4">
+          <div>
+            <p className="text-xs font-mono text-[#7EC8A0] uppercase tracking-widest mb-2">Unless Creative</p>
+            <h1 className="text-3xl text-white leading-tight">Gap Maps</h1>
+            <p className="text-neutral-400 text-sm mt-1">
+              Phase 03 of the Brand Alignment Intensive — capture, score, and synthesize.
+            </p>
+          </div>
+          <button
+            onClick={createNew}
+            disabled={creating}
+            className="bg-[#F04D3D] text-white text-sm font-medium px-5 py-2.5 rounded-xl hover:bg-[#d43c2d] transition disabled:opacity-50 shrink-0"
+          >
+            {creating ? 'Creating…' : '+ New Gap Map'}
+          </button>
         </div>
-        <button
-          onClick={createNew}
-          disabled={creating}
-          className="bg-black text-white text-sm font-medium px-5 py-2.5 rounded-xl hover:bg-neutral-800 transition disabled:opacity-50 shrink-0"
-        >
-          {creating ? 'Creating…' : '+ New Gap Map'}
-        </button>
       </div>
+      <div className="p-6 max-w-4xl mx-auto space-y-8">
 
       {/* List */}
       {maps.length === 0 ? (
@@ -123,7 +126,7 @@ export default function GapMapsPage() {
           <button
             onClick={createNew}
             disabled={creating}
-            className="bg-black text-white text-sm font-medium px-5 py-2.5 rounded-xl hover:bg-neutral-800 transition"
+            className="bg-[#F04D3D] text-white text-sm font-medium px-5 py-2.5 rounded-xl hover:bg-[#d43c2d] transition"
           >
             {creating ? 'Creating…' : '+ New Gap Map'}
           </button>
@@ -142,9 +145,9 @@ export default function GapMapsPage() {
                     <span className={`inline-flex items-center gap-1.5 text-xs font-medium px-2 py-0.5 rounded-full ${
                       map.status === 'complete'
                         ? 'bg-green-50 text-green-700'
-                        : 'bg-amber-50 text-amber-700'
+                        : 'bg-[#F04D3D]/10 text-[#F04D3D]'
                     }`}>
-                      <span className={`w-1.5 h-1.5 rounded-full ${map.status === 'complete' ? 'bg-green-500' : 'bg-amber-500'}`} />
+                      <span className={`w-1.5 h-1.5 rounded-full ${map.status === 'complete' ? 'bg-green-500' : 'bg-[#F04D3D]'}`} />
                       {map.status === 'complete' ? 'Complete' : 'Draft'}
                     </span>
                   </div>
@@ -164,6 +167,7 @@ export default function GapMapsPage() {
           ))}
         </div>
       )}
+      </div>
     </div>
   )
 }

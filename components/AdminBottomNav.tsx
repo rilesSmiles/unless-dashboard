@@ -26,7 +26,7 @@ export default function AdminBottomNav() {
               key={item.href}
               href={item.href}
               className={`flex flex-col items-center text-xs px-2 py-3 rounded-lg transition ${
-                active ? 'text-black font-semibold' : 'text-gray-500 hover:text-black'
+                active ? 'text-brand-pink font-semibold' : 'text-gray-500 hover:text-black'
               }`}
             >
               {item.name}
