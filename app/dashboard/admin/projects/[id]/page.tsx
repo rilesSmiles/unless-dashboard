@@ -99,10 +99,11 @@ export default function ProjectDetailPage() {
   const [addingDeliv, setAddingDeliv] = useState<string | null>(null)
   const [updatingDeliv, setUpdatingDeliv] = useState<string | null>(null)
 
-  // client_description per step (debounced save)
-  const [clientDescByStep, setClientDescByStep] = useState<Record<string, string>>({})
-  const debouncedClientDesc = useDebounce(clientDescByStep, 800)
-  const didMountClientDesc = useRef(false)
+  // client_description per step — draft + published state
+  const [clientDescDraft, setClientDescDraft] = useState<Record<string, string>>({})
+  const [clientDescSaved, setClientDescSaved] = useState<Record<string, string>>({})
+  const [publishingDesc, setPublishingDesc] = useState<string | null>(null)
+  const [publishedDesc, setPublishedDesc] = useState<string | null>(null)
 
   // docs
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -162,12 +163,13 @@ export default function ProjectDetailPage() {
         const savedLeaders = pData.leaders ?? ['CEO / Founder','Leader 2','Leader 3','Leader 4','Leader 5','Leader 6']
         setLeaders(savedLeaders)
 
-        // seed client_description state from loaded steps
+        // seed client_description draft + saved state from loaded steps
         const descMap: Record<string, string> = {}
         for (const s of (pData.project_steps ?? [])) {
           descMap[s.id] = s.client_description ?? ''
         }
-        setClientDescByStep(descMap)
+        setClientDescDraft(descMap)
+        setClientDescSaved(descMap)
 
         const isBAI = pData.project_type?.toLowerCase().includes('alignment') || pData.project_type?.toLowerCase().includes('intensive')
         if (isBAI) {
@@ -200,13 +202,21 @@ export default function ProjectDetailPage() {
       .then(() => setSavingLeaders(false))
   }, [debouncedLeaders])
 
-  // ── auto-save client_description per step ─────────────────────────────────
-  useEffect(() => {
-    if (!didMountClientDesc.current) { didMountClientDesc.current = true; return }
-    for (const [stepId, desc] of Object.entries(debouncedClientDesc)) {
-      supabase.from('project_steps').update({ client_description: desc || null }).eq('id', stepId)
+  // ── publish client_description for a step ────────────────────────────────
+  const publishClientDesc = async (stepId: string) => {
+    const desc = clientDescDraft[stepId] ?? ''
+    setPublishingDesc(stepId)
+    const { error } = await supabase
+      .from('project_steps')
+      .update({ client_description: desc || null })
+      .eq('id', stepId)
+    setPublishingDesc(null)
+    if (!error) {
+      setClientDescSaved((p) => ({ ...p, [stepId]: desc }))
+      setPublishedDesc(stepId)
+      setTimeout(() => setPublishedDesc((prev) => prev === stepId ? null : prev), 3000)
     }
-  }, [debouncedClientDesc])
+  }
 
   // ── doc thumbnails ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -777,18 +787,41 @@ export default function ProjectDetailPage() {
                     </div>
 
                     {/* ── What Riley's Working On (client_description) ── */}
-                    <div className="px-6 pb-5 pt-1 space-y-2 border-t border-neutral-100">
-                      <div className="pt-3">
-                        <p className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1">"What Riley's Working On" — Client-facing description</p>
-                        <p className="text-xs text-neutral-400 mb-2">This appears in the client portal under each phase to give them context on what you're doing.</p>
+                    <div className="px-6 pb-5 pt-1 space-y-3 border-t border-neutral-100">
+                      <div className="pt-3 flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-0.5">"What Riley's Working On" — Client-facing</p>
+                          <p className="text-xs text-neutral-400">Publish to make visible in the client portal.</p>
+                        </div>
+                        {/* Publish status badge */}
+                        {clientDescSaved[step.id] ? (
+                          <span className="shrink-0 text-xs px-2 py-0.5 rounded-full font-medium bg-green-100 text-green-700">● Live</span>
+                        ) : (
+                          <span className="shrink-0 text-xs px-2 py-0.5 rounded-full font-medium bg-neutral-100 text-neutral-400">Not published</span>
+                        )}
                       </div>
                       <textarea
-                        value={clientDescByStep[step.id] ?? ''}
-                        onChange={(e) => setClientDescByStep((p) => ({ ...p, [step.id]: e.target.value }))}
+                        value={clientDescDraft[step.id] ?? ''}
+                        onChange={(e) => setClientDescDraft((p) => ({ ...p, [step.id]: e.target.value }))}
                         rows={3}
                         placeholder="e.g. Riley is conducting individual 60-minute interviews with each member of your leadership team…"
                         className="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-black/10 placeholder-neutral-300"
                       />
+                      <div className="flex items-center justify-between gap-3">
+                        {publishedDesc === step.id ? (
+                          <span className="text-xs font-semibold" style={{ color: '#7EC8A0' }}>✓ Published — client can see this now</span>
+                        ) : clientDescDraft[step.id] !== clientDescSaved[step.id] ? (
+                          <span className="text-xs text-neutral-400">Unsaved changes</span>
+                        ) : <span />}
+                        <button
+                          onClick={() => publishClientDesc(step.id)}
+                          disabled={publishingDesc === step.id || clientDescDraft[step.id] === clientDescSaved[step.id]}
+                          className="text-xs font-semibold px-4 py-2 rounded-xl text-white transition disabled:opacity-40"
+                          style={{ background: '#1A3428' }}
+                        >
+                          {publishingDesc === step.id ? 'Publishing…' : '↑ Publish to Client'}
+                        </button>
+                      </div>
                     </div>
 
                   </div>
