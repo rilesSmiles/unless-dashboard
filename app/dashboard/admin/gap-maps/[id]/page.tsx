@@ -231,6 +231,15 @@ export default function GapMapEditorPage() {
     updateMap({ status: 'complete' })
   }
 
+  const deleteGapMap = async () => {
+    if (!map) return
+    if (!confirm(`Delete "${map.title}"? This cannot be undone.`)) return
+    await supabase.from('gap_map_leader_notes').delete().eq('gap_map_id', id)
+    await supabase.from('gap_map_categories').delete().eq('gap_map_id', id)
+    await supabase.from('gap_maps').delete().eq('id', id)
+    router.push('/dashboard/admin/gap-maps')
+  }
+
   // ─── Sorted for gap map view ─────────────────────────────────────────────────
   const sortedByPriority = [...categories].sort((a, b) =>
     (SEVERITY_RANK[a.severity ?? ''] ?? 99) - (SEVERITY_RANK[b.severity ?? ''] ?? 99)
@@ -277,6 +286,13 @@ export default function GapMapEditorPage() {
                   ✓ Complete
                 </span>
               )}
+              <button
+                onClick={deleteGapMap}
+                className="text-xs text-neutral-500 hover:text-red-400 transition px-2 py-1.5"
+                title="Delete gap map"
+              >
+                Delete
+              </button>
             </div>
           </div>
 

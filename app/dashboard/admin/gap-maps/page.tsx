@@ -35,6 +35,7 @@ export default function GapMapsPage() {
   const [maps, setMaps] = useState<GapMap[]>([])
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     const load = async () => {
@@ -83,6 +84,17 @@ export default function GapMapsPage() {
 
     setCreating(false)
     router.push(`/dashboard/admin/gap-maps/${mapData.id}`)
+  }
+
+  const deleteMap = async (e: React.MouseEvent, map: GapMap) => {
+    e.stopPropagation()
+    if (!confirm(`Delete "${map.title}"? This cannot be undone.`)) return
+    setDeletingId(map.id)
+    await supabase.from('gap_map_leader_notes').delete().eq('gap_map_id', map.id)
+    await supabase.from('gap_map_categories').delete().eq('gap_map_id', map.id)
+    await supabase.from('gap_maps').delete().eq('id', map.id)
+    setMaps((prev) => prev.filter((m) => m.id !== map.id))
+    setDeletingId(null)
   }
 
   const formatDate = (iso: string) =>
@@ -134,10 +146,10 @@ export default function GapMapsPage() {
       ) : (
         <div className="space-y-3">
           {maps.map((map) => (
-            <button
+            <div
               key={map.id}
+              className="relative w-full text-left bg-white border border-neutral-200 rounded-2xl px-6 py-5 hover:border-neutral-400 hover:shadow-sm transition-all group cursor-pointer"
               onClick={() => router.push(`/dashboard/admin/gap-maps/${map.id}`)}
-              className="w-full text-left bg-white border border-neutral-200 rounded-2xl px-6 py-5 hover:border-neutral-400 hover:shadow-sm transition-all group"
             >
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1 min-w-0">
@@ -158,12 +170,22 @@ export default function GapMapsPage() {
                     <p className="text-sm text-neutral-500 mt-0.5">{map.client_name}</p>
                   )}
                 </div>
-                <div className="text-right shrink-0">
-                  <p className="text-xs text-neutral-400">{formatDate(map.updated_at)}</p>
-                  <p className="text-xs text-neutral-300 mt-0.5">updated</p>
+                <div className="flex items-start gap-4 shrink-0">
+                  <div className="text-right">
+                    <p className="text-xs text-neutral-400">{formatDate(map.updated_at)}</p>
+                    <p className="text-xs text-neutral-300 mt-0.5">updated</p>
+                  </div>
+                  <button
+                    onClick={(e) => deleteMap(e, map)}
+                    disabled={deletingId === map.id}
+                    className="opacity-0 group-hover:opacity-100 transition text-neutral-300 hover:text-red-500 text-xs px-1.5 py-1 rounded-lg hover:bg-red-50 disabled:opacity-50 mt-0.5"
+                    title="Delete gap map"
+                  >
+                    {deletingId === map.id ? '…' : '✕'}
+                  </button>
                 </div>
               </div>
-            </button>
+            </div>
           ))}
         </div>
       )}
