@@ -1,447 +1,355 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { supabase } from '@/lib/supabase'
 
-type Invoice = {
-  id: string
-  invoice_number: string | null
-  amount: number
-  status: 'draft' | 'sent' | 'paid'
-  created_at: string
+type DocStatus = 'draft' | 'sent' | 'paid' | 'accepted' | 'declined' | 'converted' | 'overdue'
 
-  project_id: string | null
-  client_id: string | null
-
-  // deposit metadata
-  is_deposit: boolean
-
-  project_name: string | null
-  business_name: string | null
+type InvoiceRow = {
+  id: string; invoice_number: string | null; amount_cents: number | null
+  amount: number | null; status: DocStatus; created_at: string
+  due_date: string | null; paid_at: string | null
+  project_name: string | null; business_name: string | null
+  is_deposit: boolean; quote_id: string | null
 }
 
-type ProjectOption = {
-  id: string
-  name: string
-  client_id: string | null
-  business_name: string | null
-
-  price_cents: number | null
-  deposit_percent: number | null
+type QuoteRow = {
+  id: string; quote_number: string | null
+  status: DocStatus; created_at: string; valid_until: string | null
+  project_name: string | null; business_name: string | null
+  converted_invoice_id: string | null
 }
 
-type ClientProfile = {
-  name: string | null
-  email: string | null
-  position: string | null
-  address: string | null
-  business_name: string | null
+const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> = {
+  draft:     { bg: 'bg-neutral-100',  text: 'text-neutral-600', label: 'Draft'     },
+  sent:      { bg: 'bg-blue-50',      text: 'text-blue-700',    label: 'Sent'      },
+  paid:      { bg: 'bg-green-50',     text: 'text-green-700',   label: 'Paid'      },
+  overdue:   { bg: 'bg-red-50',       text: 'text-red-700',     label: 'Overdue'   },
+  accepted:  { bg: 'bg-emerald-50',   text: 'text-emerald-700', label: 'Accepted'  },
+  declined:  { bg: 'bg-red-50',       text: 'text-red-700',     label: 'Declined'  },
+  converted: { bg: 'bg-amber-50',     text: 'text-amber-700',   label: 'Invoiced'  },
 }
 
-export default function InvoicesPage() {
-  const [invoices, setInvoices] = useState<Invoice[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
+const fmtMoney = (cents: number | null) =>
+  cents == null ? '—' : new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(cents / 100)
 
+const fmtDate = (s: string | null) =>
+  s ? new Date(s).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' }) : '—'
+
+function StatusBadge({ status }: { status: DocStatus | string }) {
+  const s = STATUS_STYLE[status] ?? STATUS_STYLE['draft']
+  return (
+    <span className={`text-xs font-medium px-2.5 py-0.5 rounded-full ${s.bg} ${s.text}`}>
+      {s.label}
+    </span>
+  )
+}
+
+// ─── Modal shared types ───────────────────────────────────────────────────────
+type ProjectOption = { id: string; name: string; business_name: string | null; client_id: string | null }
+
+export default function InvoicesHubPage() {
   const router = useRouter()
-  const openInvoice = (id: string) => {
-    router.push(`/dashboard/admin/invoices/${id}`)
-  }
+  const [tab, setTab] = useState<'invoices' | 'quotes'>('invoices')
+  const [invoices, setInvoices] = useState<InvoiceRow[]>([])
+  const [quotes, setQuotes] = useState<QuoteRow[]>([])
+  const [loading, setLoading] = useState(true)
+  const [showNewInvoice, setShowNewInvoice] = useState(false)
+  const [showNewQuote, setShowNewQuote] = useState(false)
 
-  /* -----------------------
-     Load Invoices
-  ------------------------*/
   useEffect(() => {
-    const loadInvoices = async () => {
-      setLoading(true)
+    const load = async () => {
+      const [{ data: invData }, { data: qtData }] = await Promise.all([
+        supabase.from('invoices').select(`id,invoice_number,amount,amount_cents,status,created_at,due_date,paid_at,is_deposit,quote_id,projects:project_id(name),profiles:client_id(business_name)`).order('created_at', { ascending: false }),
+        supabase.from('quotes').select(`id,quote_number,status,created_at,valid_until,converted_invoice_id,projects:project_id(name),profiles:client_id(business_name)`).order('created_at', { ascending: false }),
+      ])
 
-      const { data, error } = await supabase
-        .from('invoices')
-        .select(
-          `
-          id,
-          invoice_number,
-          amount,
-          status,
-          created_at,
-          project_id,
-          client_id,
-          is_deposit,
+      setInvoices((invData ?? []).map((d: any) => ({
+        id: d.id, invoice_number: d.invoice_number ?? null,
+        amount_cents: d.amount_cents ?? null, amount: d.amount ?? null,
+        status: d.status, created_at: d.created_at, due_date: d.due_date ?? null,
+        paid_at: d.paid_at ?? null, is_deposit: d.is_deposit ?? false,
+        quote_id: d.quote_id ?? null,
+        project_name: (Array.isArray(d.projects) ? d.projects[0] : d.projects)?.name ?? null,
+        business_name: (Array.isArray(d.profiles) ? d.profiles[0] : d.profiles)?.business_name ?? null,
+      })))
 
-          projects:project_id (
-            name
-          ),
+      setQuotes((qtData ?? []).map((d: any) => ({
+        id: d.id, quote_number: d.quote_number ?? null,
+        status: d.status, created_at: d.created_at, valid_until: d.valid_until ?? null,
+        converted_invoice_id: d.converted_invoice_id ?? null,
+        project_name: (Array.isArray(d.projects) ? d.projects[0] : d.projects)?.name ?? null,
+        business_name: (Array.isArray(d.profiles) ? d.profiles[0] : d.profiles)?.business_name ?? null,
+      })))
 
-          profiles:client_id (
-            business_name
-          )
-        `
-        )
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.warn('Invoice load warning:', error)
-      }
-
-      const formatted: Invoice[] = (data || []).map((inv: any) => ({
-        id: inv.id,
-        invoice_number: inv.invoice_number ?? null,
-        amount: inv.amount,
-        status: inv.status,
-        created_at: inv.created_at,
-
-        project_id: inv.project_id ?? null,
-        client_id: inv.client_id ?? null,
-
-        is_deposit: inv.is_deposit ?? false,
-
-        project_name: inv.projects?.name ?? null,
-        business_name: inv.profiles?.business_name ?? null,
-      }))
-
-      setInvoices(formatted)
       setLoading(false)
     }
-
-    loadInvoices()
+    load()
   }, [])
 
-  /* -----------------------
-     Send (publish) Invoice
-  ------------------------*/
-  const sendInvoice = async (invoiceId: string) => {
-    const { error } = await supabase
-      .from('invoices')
-      .update({ status: 'sent' })
-      .eq('id', invoiceId)
+  // ── Stats ──
+  const totalPaid   = invoices.filter((i) => i.status === 'paid').reduce((s, i) => s + (i.amount_cents ?? i.amount ?? 0), 0)
+  const totalOwed   = invoices.filter((i) => i.status === 'sent').reduce((s, i) => s + (i.amount_cents ?? i.amount ?? 0), 0)
+  const openQuotes  = quotes.filter((q) => q.status === 'draft' || q.status === 'sent').length
 
-    if (error) {
-      console.error(error)
-      alert('Failed to send invoice')
-      return
-    }
-
-    setInvoices((prev) =>
-      prev.map((inv) =>
-        inv.id === invoiceId ? { ...inv, status: 'sent' } : inv
-      )
-    )
-  }
-
-  if (loading) return <p className="p-8">Loading…</p>
+  if (loading) return <div className="p-8 text-neutral-400 text-sm">Loading…</div>
 
   return (
-    <div className="p-8 max-w-[1400px] mx-auto space-y-6">
+    <div className="min-h-screen bg-neutral-50 pb-32">
+
       {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-2xl font-bold">Invoices</h1>
-          <p className="text-sm text-gray-500">
-            Drafts, sent invoices, and paid invoices live here.
-          </p>
-        </div>
-
-        <button
-          onClick={() => setShowForm(true)}
-          className="bg-black text-white px-4 py-2 rounded-lg"
-        >
-          + New Invoice
-        </button>
-      </div>
-
-      {/* Empty State */}
-      {invoices.length === 0 && (
-        <div className="border border-dashed rounded-xl p-10 text-center text-gray-400">
-          No invoices yet ✨
-        </div>
-      )}
-
-      {/* List */}
-      <div className="grid gap-3">
-        {invoices.map((inv) => (
-          <div
-            key={inv.id}
-            onClick={() => openInvoice(inv.id)}
-            className="border rounded-xl p-4 flex justify-between items-center cursor-pointer hover:border-neutral-600 transition"
-          >
+      <div className="bg-black px-6 pt-10 pb-0">
+        <div className="max-w-5xl mx-auto">
+          <div className="flex items-end justify-between gap-4 pb-6">
             <div>
-              <p className="font-medium">
-                {(inv.invoice_number ?? 'Draft') + ' • ' + (inv.project_name || 'Project')}
-                {inv.is_deposit ? (
-                  <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-neutral-800 text-white">
-                    Deposit
-                  </span>
-                ) : null}
-              </p>
-
-              <p className="text-sm text-gray-500">
-                {inv.business_name || 'Client'}
-              </p>
-
-              <p className="text-xs text-gray-400 mt-1">
-                {new Date(inv.created_at).toLocaleDateString()}
-              </p>
+              <p className="text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1">Unless Creative</p>
+              <h1 className="text-3xl font-bold text-white">Billing</h1>
             </div>
-
-            <div className="text-right">
-              <p className="font-semibold">
-                ${(inv.amount / 100).toFixed(2)}
-              </p>
-
-              <p className="text-xs uppercase text-gray-500">
-                {inv.status}
-              </p>
-
-              {/* IMPORTANT: stop click from opening invoice */}
-              {inv.status === 'draft' && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    sendInvoice(inv.id)
-                  }}
-                  className="bg-black text-white px-4 py-2 rounded-lg mt-2"
-                >
-                  Send to Client
-                </button>
-              )}
-
-              {inv.status === 'sent' && (
-                <p className="text-xs text-gray-500 mt-2">Sent ✅</p>
-              )}
-
-              {inv.status === 'paid' && (
-                <p className="text-xs text-green-600 mt-2">Paid 💸</p>
-              )}
+            <div className="flex items-center gap-3 pb-1">
+              <button onClick={() => setShowNewQuote(true)}
+                className="text-sm font-medium px-4 py-2 border border-neutral-700 text-neutral-300 rounded-xl hover:border-white hover:text-white transition">
+                + New Quote
+              </button>
+              <button onClick={() => setShowNewInvoice(true)}
+                className="text-sm font-medium px-4 py-2 bg-amber-400 text-black rounded-xl hover:bg-amber-300 transition">
+                + New Invoice
+              </button>
             </div>
           </div>
-        ))}
+
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-4 pb-6">
+            {[
+              { label: 'Collected', value: fmtMoney(totalPaid), sub: 'paid invoices' },
+              { label: 'Outstanding', value: fmtMoney(totalOwed), sub: 'awaiting payment' },
+              { label: 'Open Quotes', value: openQuotes, sub: 'pending response' },
+            ].map(({ label, value, sub }) => (
+              <div key={label} className="bg-neutral-900 border border-neutral-800 rounded-2xl p-4">
+                <p className="text-xs text-neutral-500 uppercase tracking-wider font-medium">{label}</p>
+                <p className="text-2xl font-bold text-white mt-1">{value}</p>
+                <p className="text-xs text-neutral-600 mt-0.5">{sub}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Tabs */}
+          <div className="flex gap-0">
+            {(['invoices', 'quotes'] as const).map((t) => (
+              <button key={t} onClick={() => setTab(t)}
+                className={`px-5 py-3 text-sm font-medium border-b-2 capitalize transition -mb-px ${
+                  tab === t ? 'border-amber-400 text-amber-400' : 'border-transparent text-neutral-500 hover:text-neutral-300'
+                }`}>
+                {t} ({t === 'invoices' ? invoices.length : quotes.length})
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* Create Invoice Modal */}
-      {showForm && (
-        <CreateInvoiceModal
-          onClose={() => setShowForm(false)}
-          onCreated={(newInvoice) => setInvoices([newInvoice, ...invoices])}
+      {/* Content */}
+      <div className="max-w-5xl mx-auto px-6 pt-6 space-y-3">
+
+        {/* ── Invoices ── */}
+        {tab === 'invoices' && (
+          <>
+            {invoices.length === 0 ? (
+              <EmptyState label="No invoices yet" cta="Create your first invoice" onClick={() => setShowNewInvoice(true)} />
+            ) : (
+              invoices.map((inv) => {
+                const cents = inv.amount_cents ?? inv.amount ?? 0
+                return (
+                  <button key={inv.id} onClick={() => router.push(`/dashboard/admin/invoices/${inv.id}`)}
+                    className="w-full text-left bg-white border border-neutral-200 rounded-2xl px-6 py-5 hover:border-neutral-400 hover:shadow-sm transition group flex items-center gap-5">
+                    {/* Status pip */}
+                    <div className={`w-1.5 h-12 rounded-full shrink-0 ${
+                      inv.status === 'paid' ? 'bg-green-400' :
+                      inv.status === 'sent' ? 'bg-blue-400' :
+                      inv.status === 'overdue' ? 'bg-red-400' : 'bg-neutral-200'
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-3 mb-1 flex-wrap">
+                        <span className="font-mono text-xs text-neutral-400">{inv.invoice_number ?? 'Draft'}</span>
+                        <StatusBadge status={inv.status} />
+                        {inv.is_deposit && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-500">Deposit</span>
+                        )}
+                        {inv.quote_id && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">From Quote</span>
+                        )}
+                      </div>
+                      <p className="font-semibold text-neutral-900 group-hover:text-black">
+                        {inv.project_name ?? 'No project'}
+                      </p>
+                      <p className="text-xs text-neutral-400 mt-0.5">{inv.business_name ?? '—'}</p>
+                    </div>
+                    <div className="text-right shrink-0 space-y-1">
+                      <p className="text-xl font-bold text-neutral-900">{fmtMoney(cents)}</p>
+                      <p className="text-xs text-neutral-400">
+                        {inv.status === 'paid' && inv.paid_at ? `Paid ${fmtDate(inv.paid_at)}` :
+                         inv.due_date ? `Due ${fmtDate(inv.due_date)}` : `Created ${fmtDate(inv.created_at)}`}
+                      </p>
+                    </div>
+                  </button>
+                )
+              })
+            )}
+          </>
+        )}
+
+        {/* ── Quotes ── */}
+        {tab === 'quotes' && (
+          <>
+            {quotes.length === 0 ? (
+              <EmptyState label="No quotes yet" cta="Create your first quote" onClick={() => setShowNewQuote(true)} />
+            ) : (
+              quotes.map((qt) => (
+                <button key={qt.id} onClick={() => router.push(`/dashboard/admin/quotes/${qt.id}`)}
+                  className="w-full text-left bg-white border border-neutral-200 rounded-2xl px-6 py-5 hover:border-neutral-400 hover:shadow-sm transition group flex items-center gap-5">
+                  <div className={`w-1.5 h-12 rounded-full shrink-0 ${
+                    qt.status === 'accepted' ? 'bg-emerald-400' :
+                    qt.status === 'converted' ? 'bg-amber-400' :
+                    qt.status === 'declined' ? 'bg-red-400' :
+                    qt.status === 'sent' ? 'bg-blue-400' : 'bg-neutral-200'
+                  }`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-3 mb-1 flex-wrap">
+                      <span className="font-mono text-xs text-neutral-400">{qt.quote_number ?? 'Draft'}</span>
+                      <StatusBadge status={qt.status} />
+                    </div>
+                    <p className="font-semibold text-neutral-900 group-hover:text-black">
+                      {qt.project_name ?? 'No project'}
+                    </p>
+                    <p className="text-xs text-neutral-400 mt-0.5">{qt.business_name ?? '—'}</p>
+                  </div>
+                  <div className="text-right shrink-0 space-y-1">
+                    <p className="text-xs text-neutral-400">
+                      {qt.valid_until ? `Valid until ${fmtDate(qt.valid_until)}` : `Created ${fmtDate(qt.created_at)}`}
+                    </p>
+                    {qt.converted_invoice_id && (
+                      <p className="text-xs text-amber-600 font-medium">→ Invoice created</p>
+                    )}
+                  </div>
+                </button>
+              ))
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Modals */}
+      {showNewInvoice && (
+        <NewDocModal
+          type="invoice"
+          onClose={() => setShowNewInvoice(false)}
+          onCreated={(id) => { setShowNewInvoice(false); router.push(`/dashboard/admin/invoices/${id}`) }}
+        />
+      )}
+      {showNewQuote && (
+        <NewDocModal
+          type="quote"
+          onClose={() => setShowNewQuote(false)}
+          onCreated={(id) => { setShowNewQuote(false); router.push(`/dashboard/admin/quotes/${id}`) }}
         />
       )}
     </div>
   )
 }
 
-/* -----------------------------------
-   Modal (inline for now)
-------------------------------------*/
+// ─── Empty State ──────────────────────────────────────────────────────────────
+function EmptyState({ label, cta, onClick }: { label: string; cta: string; onClick: () => void }) {
+  return (
+    <div className="border border-dashed border-neutral-200 rounded-2xl p-16 text-center space-y-3">
+      <p className="text-neutral-400 text-sm">{label}</p>
+      <button onClick={onClick} className="text-sm font-medium text-black underline">{cta}</button>
+    </div>
+  )
+}
 
-function CreateInvoiceModal({
-  onClose,
-  onCreated,
-}: {
+// ─── New Doc Modal ─────────────────────────────────────────────────────────────
+function NewDocModal({ type, onClose, onCreated }: {
+  type: 'invoice' | 'quote'
   onClose: () => void
-  onCreated: (i: Invoice) => void
+  onCreated: (id: string) => void
 }) {
-  const [amount, setAmount] = useState('')
-  const [projectId, setProjectId] = useState('')
   const [projects, setProjects] = useState<ProjectOption[]>([])
+  const [projectId, setProjectId] = useState('')
   const [saving, setSaving] = useState(false)
 
-  const [isDeposit, setIsDeposit] = useState(false)
-
-  const selectedProject = useMemo(
-    () => projects.find((p) => p.id === projectId),
-    [projects, projectId]
-  )
-
   useEffect(() => {
-    const loadProjects = async () => {
-      const { data, error } = await supabase
-        .from('projects')
-        .select(
-          `
-          id,
-          name,
-          client_id,
-          price_cents,
-          deposit_percent,
-          profiles:client_id (
-            business_name
-          )
-        `
-        )
-        .order('created_at', { ascending: false })
-
-      if (error) {
-        console.error('Load projects error:', error)
-        return
-      }
-
-      const formatted: ProjectOption[] = (data || []).map((p: any) => ({
-        id: p.id,
-        name: p.name,
-        client_id: p.client_id ?? null,
-        business_name: p.profiles?.business_name ?? null,
-
-        price_cents: p.price_cents ?? null,
-        deposit_percent: p.deposit_percent ?? 50,
-      }))
-
-      setProjects(formatted)
-    }
-
-    loadProjects()
+    supabase.from('projects').select('id,name,client_id,profiles:client_id(business_name)').order('created_at', { ascending: false })
+      .then(({ data }) => setProjects((data ?? []).map((p: any) => ({
+        id: p.id, name: p.name, client_id: p.client_id ?? null,
+        business_name: (Array.isArray(p.profiles) ? p.profiles[0] : p.profiles)?.business_name ?? null,
+      }))))
   }, [])
 
-  // ✅ Auto-fill amount based on project price + deposit toggle
-  useEffect(() => {
-    if (!selectedProject?.price_cents) return
+  const selected = projects.find((p) => p.id === projectId)
 
-    const pct = selectedProject.deposit_percent ?? 50
-    const cents = isDeposit
-      ? Math.round(selectedProject.price_cents * (pct / 50))
-      : selectedProject.price_cents
-
-    setAmount((cents / 100).toFixed(2))
-  }, [selectedProject, isDeposit])
-
-  const createInvoice = async () => {
-    if (!amount || !projectId) return
-
-    const selected = selectedProject
-
-    if (!selected?.client_id) {
-      alert('This project has no client attached yet.')
-      return
-    }
-
-    const cents = Math.round(Number(amount) * 100)
-    if (!Number.isFinite(cents) || cents <= 0) {
-      alert('Please enter a valid amount.')
-      return
-    }
-
+  const create = async () => {
     setSaving(true)
 
-    // ✅ Fetch client profile FIRST (for bill-to snapshot)
-    const { data: clientProfile, error: clientErr } = await supabase
-      .from('profiles')
-      .select('name, email, position, address, business_name')
-      .eq('id', selected.client_id)
-      .single()
+    let clientSnap: { bill_to_name: string | null; bill_to_email: string | null; bill_to_position: string | null; bill_to_address: string | null } = { bill_to_name: null, bill_to_email: null, bill_to_position: null, bill_to_address: null }
 
-    if (clientErr || !clientProfile) {
-      setSaving(false)
-      alert('Could not load client details.')
-      console.error('Client profile error:', clientErr)
-      return
+    if (selected?.client_id) {
+      const { data } = await supabase.from('profiles').select('name,email,position,address,business_name').eq('id', selected.client_id).single()
+      if (data) clientSnap = { bill_to_name: data.business_name ?? data.name, bill_to_email: data.email, bill_to_position: data.position, bill_to_address: data.address }
     }
 
-    const p = clientProfile as ClientProfile
-
-    const projectTotal = selected.price_cents ?? cents
-    const depositPct = selected.deposit_percent ?? 50
-
-    const { data, error } = await supabase
-      .from('invoices')
-      .insert({
-        project_id: projectId,
-        client_id: selected.client_id,
-        amount: cents,
+    if (type === 'invoice') {
+      const { data, error } = await supabase.from('invoices').insert({
+        project_id: projectId || null,
+        client_id: selected?.client_id ?? null,
         status: 'draft',
-
-        is_deposit: isDeposit,
-        project_total_cents: projectTotal,
-        deposit_percent_used: isDeposit ? depositPct : null,
-
-        bill_to_name: p.business_name ?? p.name ?? null,
-        bill_to_email: p.email ?? null,
-        bill_to_position: p.position ?? null,
-        bill_to_address: p.address ?? null,
-      })
-      .select('id, invoice_number, amount, status, created_at, project_id, client_id, is_deposit')
-      .single()
-
-    setSaving(false)
-
-    if (error) {
-      alert('Error creating invoice')
-      console.error('Create invoice error:', error, JSON.stringify(error))
-      return
+        amount: 0, amount_cents: 0,
+        ...clientSnap,
+      }).select('id').single()
+      setSaving(false)
+      if (data) onCreated(data.id)
+    } else {
+      const { data, error } = await supabase.from('quotes').insert({
+        project_id: projectId || null,
+        client_id: selected?.client_id ?? null,
+        status: 'draft',
+        ...clientSnap,
+      }).select('id').single()
+      setSaving(false)
+      if (data) onCreated(data.id)
     }
-
-    const formatted: Invoice = {
-      id: data.id,
-      invoice_number: data.invoice_number ?? null,
-      amount: data.amount,
-      status: data.status as Invoice['status'],
-      created_at: data.created_at,
-      project_id: data.project_id ?? null,
-      client_id: data.client_id ?? null,
-
-      is_deposit: data.is_deposit ?? false,
-
-      project_name: selected.name ?? null,
-      business_name: selected.business_name ?? null,
-    }
-
-    onCreated(formatted)
-    onClose()
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-      <div className="bg-neutral-900 rounded-xl p-6 w-full max-w-md space-y-4">
-        <h3 className="font-semibold text-lg text-white">New Invoice</h3>
-
-        {/* Project */}
-        <select
-          className="w-full border rounded p-2 bg-white"
-          value={projectId}
-          onChange={(e) => setProjectId(e.target.value)}
-        >
-          <option value="">Select project</option>
-
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-              {p.business_name ? ` — ${p.business_name}` : ''}
-            </option>
-          ))}
-        </select>
-
-        {/* Deposit toggle */}
-        <div className="flex items-center justify-between">
-          <label className="text-white text-sm">Deposit invoice</label>
-          <button
-            type="button"
-            onClick={() => setIsDeposit((v) => !v)}
-            className={`px-3 py-1 rounded-full text-sm ${
-              isDeposit ? 'bg-white text-black' : 'bg-neutral-800 text-white'
-            }`}
-          >
-            {isDeposit ? 'ON' : 'OFF'}
-          </button>
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-6"
+      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 space-y-5">
+        <div className="flex items-start justify-between">
+          <h2 className="font-bold text-neutral-900 text-lg">
+            New {type === 'invoice' ? 'Invoice' : 'Quote'}
+          </h2>
+          <button onClick={onClose} className="text-neutral-400 hover:text-black text-sm">✕</button>
         </div>
-
-        {/* Amount */}
-        <input
-          className="w-full border rounded p-2 bg-white"
-          placeholder="Amount (ex: 2500)"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-        />
-
-        {/* Actions */}
-        <div className="flex justify-end gap-2 pt-3">
-          <button onClick={onClose} className="px-3 py-2 text-white/80">
+        <div>
+          <label className="text-xs font-bold text-neutral-500 uppercase tracking-wider">
+            Project <span className="font-normal normal-case text-neutral-400">(optional)</span>
+          </label>
+          <select value={projectId} onChange={(e) => setProjectId(e.target.value)}
+            className="mt-1 w-full border border-neutral-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-black/10 bg-white">
+            <option value="">No project</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}{p.business_name ? ` — ${p.business_name}` : ''}</option>
+            ))}
+          </select>
+        </div>
+        <p className="text-xs text-neutral-400">
+          You'll add line items, amounts, and details on the next screen.
+        </p>
+        <div className="flex gap-3 pt-1">
+          <button onClick={onClose} className="flex-1 border border-neutral-200 text-neutral-600 text-sm py-2.5 rounded-xl hover:border-neutral-400 transition">
             Cancel
           </button>
-
-          <button
-            onClick={createInvoice}
-            disabled={saving}
-            className="bg-white text-black px-4 py-2 rounded disabled:opacity-60"
-          >
-            {saving ? 'Creating…' : 'Create'}
+          <button onClick={create} disabled={saving}
+            className="flex-1 bg-black text-white text-sm py-2.5 rounded-xl hover:bg-neutral-800 transition disabled:opacity-50">
+            {saving ? 'Creating…' : `Create ${type === 'invoice' ? 'Invoice' : 'Quote'} →`}
           </button>
         </div>
       </div>

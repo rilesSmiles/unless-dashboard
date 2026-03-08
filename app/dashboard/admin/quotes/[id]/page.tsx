@@ -7,15 +7,14 @@ import { supabase } from '@/lib/supabase'
 type LineItem = {
   id: string; description: string; quantity: number; unit_price_cents: number; sort_order: number
 }
-type Invoice = {
-  id: string; invoice_number: string | null; status: string
+type Quote = {
+  id: string; quote_number: string | null; status: string
   bill_to_name: string | null; bill_to_email: string | null
   bill_to_position: string | null; bill_to_address: string | null
-  due_date: string | null; paid_at: string | null; notes: string | null
-  tax_rate: number; amount_cents: number | null; amount: number | null
-  is_deposit: boolean; checkout_url: string | null; quote_id: string | null
+  valid_until: string | null; notes: string | null; tax_rate: number
+  converted_invoice_id: string | null
   project_name: string | null; business_name: string | null
-  created_at: string; updated_at: string | null
+  created_at: string
 }
 
 const fmtMoney = (cents: number) =>
@@ -24,48 +23,49 @@ const fmtDate = (s: string | null) =>
   s ? new Date(s).toLocaleDateString('en-CA', { month: 'long', day: 'numeric', year: 'numeric' }) : '—'
 
 const STATUS_STYLE: Record<string, string> = {
-  draft:   'bg-neutral-100 text-neutral-600',
-  sent:    'bg-blue-50 text-blue-700',
-  paid:    'bg-green-50 text-green-700',
-  overdue: 'bg-red-50 text-red-700',
+  draft:     'bg-neutral-100 text-neutral-600',
+  sent:      'bg-blue-50 text-blue-700',
+  accepted:  'bg-emerald-50 text-emerald-700',
+  declined:  'bg-red-50 text-red-700',
+  converted: 'bg-amber-50 text-amber-700',
 }
 
-export default function InvoiceDetailPage() {
+export default function QuoteDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
 
-  const [invoice, setInvoice] = useState<Invoice | null>(null)
+  const [quote, setQuote] = useState<Quote | null>(null)
   const [lineItems, setLineItems] = useState<LineItem[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [converting, setConverting] = useState(false)
 
-  // editing
-  const [billToName, setBillToName]       = useState('')
-  const [billToEmail, setBillToEmail]     = useState('')
+  const [billToName, setBillToName]         = useState('')
+  const [billToEmail, setBillToEmail]       = useState('')
   const [billToPosition, setBillToPosition] = useState('')
-  const [billToAddress, setBillToAddress] = useState('')
-  const [dueDate, setDueDate]             = useState('')
-  const [notes, setNotes]                 = useState('')
-  const [taxRate, setTaxRate]             = useState(0)
+  const [billToAddress, setBillToAddress]   = useState('')
+  const [validUntil, setValidUntil]         = useState('')
+  const [notes, setNotes]                   = useState('')
+  const [taxRate, setTaxRate]               = useState(0)
 
   useEffect(() => {
     const load = async () => {
-      const [{ data: inv }, { data: items }] = await Promise.all([
-        supabase.from('invoices').select(`*,projects:project_id(name),profiles:client_id(business_name)`).eq('id', id).single(),
-        supabase.from('invoice_line_items').select('*').eq('invoice_id', id).order('sort_order'),
+      const [{ data: qt }, { data: items }] = await Promise.all([
+        supabase.from('quotes').select(`*,projects:project_id(name),profiles:client_id(business_name)`).eq('id', id).single(),
+        supabase.from('quote_line_items').select('*').eq('quote_id', id).order('sort_order'),
       ])
-      if (inv) {
-        const project_name = (Array.isArray(inv.projects) ? inv.projects[0] : inv.projects)?.name ?? null
-        const business_name = (Array.isArray(inv.profiles) ? inv.profiles[0] : inv.profiles)?.business_name ?? null
-        setInvoice({ ...inv, project_name, business_name })
-        setBillToName(inv.bill_to_name ?? '')
-        setBillToEmail(inv.bill_to_email ?? '')
-        setBillToPosition(inv.bill_to_position ?? '')
-        setBillToAddress(inv.bill_to_address ?? '')
-        setDueDate(inv.due_date ?? '')
-        setNotes(inv.notes ?? '')
-        setTaxRate(Number(inv.tax_rate ?? 0))
+      if (qt) {
+        const project_name = (Array.isArray(qt.projects) ? qt.projects[0] : qt.projects)?.name ?? null
+        const business_name = (Array.isArray(qt.profiles) ? qt.profiles[0] : qt.profiles)?.business_name ?? null
+        setQuote({ ...qt, project_name, business_name })
+        setBillToName(qt.bill_to_name ?? '')
+        setBillToEmail(qt.bill_to_email ?? '')
+        setBillToPosition(qt.bill_to_position ?? '')
+        setBillToAddress(qt.bill_to_address ?? '')
+        setValidUntil(qt.valid_until ?? '')
+        setNotes(qt.notes ?? '')
+        setTaxRate(Number(qt.tax_rate ?? 0))
       }
       setLineItems(items ?? [])
       setLoading(false)
@@ -73,15 +73,13 @@ export default function InvoiceDetailPage() {
     load()
   }, [id])
 
-  // ── Computed totals ──
-  const subtotal = lineItems.reduce((s, i) => s + Math.round(i.quantity * i.unit_price_cents), 0)
+  const subtotal  = lineItems.reduce((s, i) => s + Math.round(i.quantity * i.unit_price_cents), 0)
   const taxAmount = Math.round(subtotal * taxRate)
-  const total = subtotal + taxAmount
+  const total     = subtotal + taxAmount
 
-  // ── Line item helpers ──
   const addLineItem = async () => {
-    const { data } = await supabase.from('invoice_line_items').insert({
-      invoice_id: id, description: '', quantity: 1, unit_price_cents: 0, sort_order: lineItems.length,
+    const { data } = await supabase.from('quote_line_items').insert({
+      quote_id: id, description: '', quantity: 1, unit_price_cents: 0, sort_order: lineItems.length,
     }).select('*').single()
     if (data) setLineItems((p) => [...p, data])
   }
@@ -91,107 +89,173 @@ export default function InvoiceDetailPage() {
   }, [])
 
   const saveLineItem = useCallback(async (item: LineItem) => {
-    await supabase.from('invoice_line_items').update({
-      description: item.description,
-      quantity: item.quantity,
-      unit_price_cents: item.unit_price_cents,
+    await supabase.from('quote_line_items').update({
+      description: item.description, quantity: item.quantity, unit_price_cents: item.unit_price_cents,
     }).eq('id', item.id)
-    // keep totals in sync on invoice
-    const newSubtotal = lineItems.reduce((s, i) => s + Math.round(i.quantity * i.unit_price_cents), 0)
-    const newTotal = newSubtotal + Math.round(newSubtotal * taxRate)
-    await supabase.from('invoices').update({ amount_cents: newTotal, amount: newTotal, updated_at: new Date().toISOString() }).eq('id', id)
-  }, [lineItems, taxRate, id])
+  }, [])
 
   const deleteLineItem = async (itemId: string) => {
     setLineItems((p) => p.filter((li) => li.id !== itemId))
-    await supabase.from('invoice_line_items').delete().eq('id', itemId)
+    await supabase.from('quote_line_items').delete().eq('id', itemId)
   }
 
   const handleSave = async () => {
     setSaving(true)
-    await supabase.from('invoices').update({
-      bill_to_name:     billToName.trim() || null,
-      bill_to_email:    billToEmail.trim() || null,
+    await supabase.from('quotes').update({
+      bill_to_name: billToName.trim() || null,
+      bill_to_email: billToEmail.trim() || null,
       bill_to_position: billToPosition.trim() || null,
-      bill_to_address:  billToAddress.trim() || null,
-      due_date:         dueDate || null,
-      notes:            notes.trim() || null,
-      tax_rate:         taxRate,
-      amount_cents:     total,
-      amount:           total,
-      updated_at:       new Date().toISOString(),
+      bill_to_address: billToAddress.trim() || null,
+      valid_until: validUntil || null,
+      notes: notes.trim() || null,
+      tax_rate: taxRate,
+      updated_at: new Date().toISOString(),
     }).eq('id', id)
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 3000)
-    setInvoice((p) => p ? { ...p, bill_to_name: billToName, bill_to_email: billToEmail, tax_rate: taxRate } : p)
   }
 
   const markSent = async () => {
-    await supabase.from('invoices').update({ status: 'sent', updated_at: new Date().toISOString() }).eq('id', id)
-    setInvoice((p) => p ? { ...p, status: 'sent' } : p)
+    await supabase.from('quotes').update({ status: 'sent', updated_at: new Date().toISOString() }).eq('id', id)
+    setQuote((p) => p ? { ...p, status: 'sent' } : p)
   }
 
-  const markPaid = async () => {
-    const now = new Date().toISOString()
-    await supabase.from('invoices').update({ status: 'paid', paid_at: now, updated_at: now }).eq('id', id)
-    setInvoice((p) => p ? { ...p, status: 'paid', paid_at: now } : p)
+  const markAccepted = async () => {
+    await supabase.from('quotes').update({ status: 'accepted', updated_at: new Date().toISOString() }).eq('id', id)
+    setQuote((p) => p ? { ...p, status: 'accepted' } : p)
   }
 
-  const deleteInvoice = async () => {
-    if (!confirm('Delete this invoice?')) return
-    await supabase.from('invoices').delete().eq('id', id)
-    router.push('/dashboard/admin/invoices')
+  const markDeclined = async () => {
+    await supabase.from('quotes').update({ status: 'declined', updated_at: new Date().toISOString() }).eq('id', id)
+    setQuote((p) => p ? { ...p, status: 'declined' } : p)
   }
 
-  if (loading) return <div className="p-8 text-neutral-400 text-sm">Loading invoice…</div>
-  if (!invoice) return <div className="p-8 text-red-400 text-sm">Invoice not found.</div>
+  // ── Convert to Invoice ─────────────────────────────────────────────────────
+  const convertToInvoice = async () => {
+    if (!confirm('Convert this quote to an invoice? This will create a new invoice with the same line items.')) return
+    setConverting(true)
+    try {
+      // 1. Save latest edits first
+      await supabase.from('quotes').update({
+        bill_to_name: billToName || null, bill_to_email: billToEmail || null,
+        bill_to_position: billToPosition || null, bill_to_address: billToAddress || null,
+        valid_until: validUntil || null, notes: notes || null, tax_rate: taxRate,
+        status: 'converted', updated_at: new Date().toISOString(),
+      }).eq('id', id)
 
-  const isEditable = invoice.status === 'draft'
+      // 2. Create invoice
+      const { data: inv, error: invErr } = await supabase.from('invoices').insert({
+        project_id: quote?.project_name ? undefined : undefined, // project linked via quote
+        status: 'draft',
+        amount: total, amount_cents: total,
+        bill_to_name: billToName || null, bill_to_email: billToEmail || null,
+        bill_to_position: billToPosition || null, bill_to_address: billToAddress || null,
+        notes: notes || null, tax_rate: taxRate,
+        quote_id: id,
+      }).select('id').single()
+      if (invErr || !inv) throw invErr
+
+      // 3. Copy line items
+      if (lineItems.length > 0) {
+        await supabase.from('invoice_line_items').insert(
+          lineItems.map((li) => ({
+            invoice_id: inv.id, description: li.description,
+            quantity: li.quantity, unit_price_cents: li.unit_price_cents, sort_order: li.sort_order,
+          }))
+        )
+      }
+
+      // 4. Link back
+      await supabase.from('quotes').update({ converted_invoice_id: inv.id }).eq('id', id)
+      setQuote((p) => p ? { ...p, status: 'converted', converted_invoice_id: inv.id } : p)
+
+      // 5. Navigate to invoice
+      router.push(`/dashboard/admin/invoices/${inv.id}`)
+    } catch (e) {
+      console.error('Convert error:', e)
+      setConverting(false)
+    }
+  }
+
+  const deleteQuote = async () => {
+    if (!confirm('Delete this quote?')) return
+    await supabase.from('quotes').delete().eq('id', id)
+    router.push('/dashboard/admin/invoices?tab=quotes')
+  }
+
+  if (loading) return <div className="p-8 text-neutral-400 text-sm">Loading quote…</div>
+  if (!quote) return <div className="p-8 text-red-400 text-sm">Quote not found.</div>
+
+  const isEditable = quote.status === 'draft' || quote.status === 'sent'
+  const isConverted = quote.status === 'converted'
 
   return (
     <div className="min-h-screen bg-neutral-100 pb-32">
 
       {/* Top bar */}
       <div className="bg-white border-b border-neutral-200 px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between gap-4">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-4 flex-wrap">
           <button onClick={() => router.push('/dashboard/admin/invoices')}
             className="text-sm text-neutral-500 hover:text-black transition flex items-center gap-1">
             ← Billing
           </button>
-          <div className="flex items-center gap-3">
-            <span className={`text-xs font-medium px-3 py-1 rounded-full ${STATUS_STYLE[invoice.status] ?? STATUS_STYLE['draft']}`}>
-              {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className={`text-xs font-medium px-3 py-1 rounded-full ${STATUS_STYLE[quote.status] ?? STATUS_STYLE['draft']}`}>
+              {quote.status.charAt(0).toUpperCase() + quote.status.slice(1)}
             </span>
+
             {isEditable && (
               <button onClick={handleSave} disabled={saving}
                 className="text-sm font-medium px-4 py-2 bg-black text-white rounded-xl hover:bg-neutral-800 transition disabled:opacity-50">
                 {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save'}
               </button>
             )}
-            {invoice.status === 'draft' && (
+
+            {quote.status === 'draft' && (
               <button onClick={markSent}
-                className="text-sm font-medium px-4 py-2 border border-neutral-200 text-neutral-700 rounded-xl hover:border-black hover:text-black transition">
+                className="text-sm font-medium px-4 py-2 border border-neutral-200 text-neutral-700 rounded-xl hover:border-black transition">
                 Mark Sent
               </button>
             )}
-            {invoice.status === 'sent' && (
-              <button onClick={markPaid}
-                className="text-sm font-medium px-4 py-2 bg-green-600 text-white rounded-xl hover:bg-green-700 transition">
-                Mark Paid
+            {quote.status === 'sent' && (
+              <>
+                <button onClick={markAccepted}
+                  className="text-sm font-medium px-4 py-2 bg-emerald-600 text-white rounded-xl hover:bg-emerald-700 transition">
+                  Mark Accepted
+                </button>
+                <button onClick={markDeclined}
+                  className="text-sm font-medium px-4 py-2 border border-neutral-200 text-neutral-600 rounded-xl hover:border-red-300 hover:text-red-600 transition">
+                  Declined
+                </button>
+              </>
+            )}
+
+            {/* Convert to Invoice — the big one */}
+            {(quote.status === 'accepted' || quote.status === 'sent' || quote.status === 'draft') && !isConverted && (
+              <button onClick={convertToInvoice} disabled={converting}
+                className="text-sm font-semibold px-5 py-2 bg-amber-400 text-black rounded-xl hover:bg-amber-300 transition disabled:opacity-50 flex items-center gap-2">
+                {converting ? 'Converting…' : '◆ Convert to Invoice'}
               </button>
             )}
-            <button onClick={deleteInvoice}
-              className="text-xs text-neutral-400 hover:text-red-600 transition px-2">
+
+            {isConverted && quote.converted_invoice_id && (
+              <button onClick={() => router.push(`/dashboard/admin/invoices/${quote.converted_invoice_id}`)}
+                className="text-sm font-medium px-4 py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl hover:bg-amber-100 transition">
+                View Invoice →
+              </button>
+            )}
+
+            <button onClick={deleteQuote} className="text-xs text-neutral-400 hover:text-red-600 transition px-2">
               Delete
             </button>
           </div>
         </div>
       </div>
 
-      {/* Invoice document */}
+      {/* Quote document */}
       <div className="max-w-4xl mx-auto px-6 py-8">
         <div className="bg-white rounded-3xl shadow-sm border border-neutral-200 overflow-hidden">
 
-          {/* Invoice header */}
+          {/* Quote header */}
           <div className="bg-black px-10 py-8 flex items-start justify-between gap-8">
             <div>
               <p className="text-white text-2xl font-bold tracking-tight">Unless Creative</p>
@@ -200,39 +264,30 @@ export default function InvoiceDetailPage() {
               <p className="text-neutral-500 text-xs">hello@unlesscreative.com</p>
             </div>
             <div className="text-right">
-              <p className="text-neutral-400 text-xs uppercase tracking-widest font-medium">
-                {invoice.is_deposit ? 'Deposit Invoice' : 'Invoice'}
-              </p>
-              <p className="text-amber-400 text-3xl font-bold mt-1">{invoice.invoice_number ?? 'Draft'}</p>
+              <p className="text-neutral-400 text-xs uppercase tracking-widest font-medium">Quote</p>
+              <p className="text-amber-400 text-3xl font-bold mt-1">{quote.quote_number ?? 'Draft'}</p>
               <div className="mt-4 space-y-1 text-right">
                 <div className="flex items-center justify-end gap-3">
                   <span className="text-neutral-500 text-xs">Issue Date</span>
-                  <span className="text-neutral-300 text-xs">{fmtDate(invoice.created_at)}</span>
+                  <span className="text-neutral-300 text-xs">{fmtDate(quote.created_at)}</span>
                 </div>
                 <div className="flex items-center justify-end gap-3">
-                  <span className="text-neutral-500 text-xs">Due Date</span>
+                  <span className="text-neutral-500 text-xs">Valid Until</span>
                   {isEditable ? (
-                    <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
+                    <input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)}
                       className="bg-neutral-800 text-neutral-300 text-xs border border-neutral-700 rounded-lg px-2 py-1 focus:outline-none focus:border-amber-400" />
                   ) : (
-                    <span className="text-neutral-300 text-xs">{fmtDate(dueDate)}</span>
+                    <span className="text-neutral-300 text-xs">{fmtDate(validUntil)}</span>
                   )}
                 </div>
-                {invoice.status === 'paid' && (
-                  <div className="flex items-center justify-end gap-3">
-                    <span className="text-neutral-500 text-xs">Paid</span>
-                    <span className="text-green-400 text-xs font-medium">{fmtDate(invoice.paid_at)}</span>
-                  </div>
-                )}
               </div>
             </div>
           </div>
 
           {/* Bill To / Project */}
           <div className="px-10 py-8 grid sm:grid-cols-2 gap-8 border-b border-neutral-100">
-            {/* Bill To */}
             <div>
-              <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">Bill To</p>
+              <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">Prepared For</p>
               {isEditable ? (
                 <div className="space-y-2">
                   <input value={billToName} onChange={(e) => setBillToName(e.target.value)}
@@ -258,20 +313,12 @@ export default function InvoiceDetailPage() {
               )}
             </div>
 
-            {/* Project info */}
             <div>
               <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">Project</p>
               <div className="space-y-1">
-                {invoice.project_name && (
-                  <p className="font-semibold text-neutral-900">{invoice.project_name}</p>
-                )}
-                {invoice.business_name && (
-                  <p className="text-sm text-neutral-500">{invoice.business_name}</p>
-                )}
-                {invoice.quote_id && (
-                  <p className="text-xs text-amber-600 mt-2">Converted from quote</p>
-                )}
-                {!invoice.project_name && <p className="text-sm text-neutral-400">No project linked</p>}
+                {quote.project_name && <p className="font-semibold text-neutral-900">{quote.project_name}</p>}
+                {quote.business_name && <p className="text-sm text-neutral-500">{quote.business_name}</p>}
+                {!quote.project_name && <p className="text-sm text-neutral-400">No project linked</p>}
               </div>
             </div>
           </div>
@@ -303,7 +350,7 @@ export default function InvoiceDetailPage() {
                         <input value={item.description}
                           onChange={(e) => updateLineItem(item.id, 'description', e.target.value)}
                           onBlur={() => saveLineItem(item)}
-                          placeholder="Line item description…"
+                          placeholder="Service or deliverable…"
                           className="w-full text-sm border-0 outline-none focus:bg-neutral-50 rounded-lg px-2 py-1 -ml-2 transition" />
                       ) : (
                         <span className="text-sm text-neutral-800">{item.description || '—'}</span>
@@ -378,15 +425,9 @@ export default function InvoiceDetailPage() {
                 <span className="font-medium">{fmtMoney(taxAmount)}</span>
               </div>
               <div className="flex items-center justify-between border-t border-neutral-200 pt-3 mt-1">
-                <span className="font-bold text-neutral-900 text-base">Total</span>
+                <span className="font-bold text-neutral-900 text-base">Estimate Total</span>
                 <span className="font-bold text-neutral-900 text-xl">{fmtMoney(total)}</span>
               </div>
-              {invoice.status === 'paid' && (
-                <div className="flex items-center justify-between text-green-600 text-sm font-medium pt-1">
-                  <span>Amount Paid</span>
-                  <span>{fmtMoney(total)}</span>
-                </div>
-              )}
             </div>
           </div>
 
@@ -395,27 +436,46 @@ export default function InvoiceDetailPage() {
             <p className="text-xs font-bold text-neutral-400 uppercase tracking-widest mb-3">Notes</p>
             {isEditable ? (
               <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={3}
-                placeholder="Payment terms, thank-you note, or any other details…"
+                placeholder="Scope notes, terms, or anything the client should know…"
                 className="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-black/10" />
             ) : (
               <p className="text-sm text-neutral-600 whitespace-pre-line">{notes || '—'}</p>
             )}
           </div>
 
-          {/* Payment link */}
-          {invoice.checkout_url && (
+          {/* Convert CTA — inside document too */}
+          {(quote.status === 'accepted' || quote.status === 'sent' || quote.status === 'draft') && !isConverted && (
             <div className="px-10 pb-8">
-              <a href={invoice.checkout_url} target="_blank" rel="noreferrer"
-                className="inline-flex items-center gap-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 px-4 py-2 rounded-xl hover:bg-amber-100 transition">
-                Pay Now →
-              </a>
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">Ready to invoice?</p>
+                  <p className="text-xs text-amber-700 mt-0.5">All line items will carry over — no re-entry needed.</p>
+                </div>
+                <button onClick={convertToInvoice} disabled={converting}
+                  className="text-sm font-semibold px-5 py-2.5 bg-black text-white rounded-xl hover:bg-neutral-800 transition disabled:opacity-50 whitespace-nowrap">
+                  {converting ? 'Converting…' : '◆ Convert to Invoice'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Converted notice */}
+          {isConverted && quote.converted_invoice_id && (
+            <div className="px-10 pb-8">
+              <div className="bg-neutral-50 border border-neutral-200 rounded-2xl p-5 flex items-center justify-between gap-4">
+                <p className="text-sm text-neutral-600">This quote has been converted to an invoice.</p>
+                <button onClick={() => router.push(`/dashboard/admin/invoices/${quote.converted_invoice_id}`)}
+                  className="text-sm font-medium text-amber-700 hover:text-amber-900 underline transition whitespace-nowrap">
+                  View Invoice →
+                </button>
+              </div>
             </div>
           )}
 
           {/* Footer */}
           <div className="bg-neutral-50 border-t border-neutral-100 px-10 py-5 flex items-center justify-between">
             <p className="text-xs text-neutral-400">Unless Creative · Calgary, AB · hello@unlesscreative.com</p>
-            <p className="text-xs text-neutral-300">Thank you for your business.</p>
+            <p className="text-xs text-neutral-300">This is a quote, not a payment request.</p>
           </div>
         </div>
       </div>
