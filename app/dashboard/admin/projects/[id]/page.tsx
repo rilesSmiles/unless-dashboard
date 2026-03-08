@@ -30,6 +30,10 @@ type InterviewNote = {
   question_index: number; note_text: string
 }
 type GapMap = { id: string; title: string; status: string; created_at: string }
+type ClientDeliverable = {
+  id: string; project_id: string; project_step_id: string
+  title: string; description: string | null; is_done: boolean; sort_order: number
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 const CATEGORY_ORDER = ['Mission','Positioning','Value Proposition','Audience','Voice & Tone','Internal vs. External']
@@ -67,6 +71,7 @@ export default function ProjectDetailPage() {
   const [interviewNotes, setInterviewNotes] = useState<InterviewNote[]>([])
   const [interviewQuestions, setInterviewQuestions] = useState<InterviewQuestion[]>([])
   const [linkedGapMaps, setLinkedGapMaps] = useState<GapMap[]>([])
+  const [clientDeliverables, setClientDeliverables] = useState<ClientDeliverable[]>([])
   const [loading, setLoading] = useState(true)
 
   // tabs
@@ -88,6 +93,16 @@ export default function ProjectDetailPage() {
   const [newTaskByStep, setNewTaskByStep] = useState<Record<string, string>>({})
   const [addingStep, setAddingStep] = useState<string | null>(null)
   const [updatingTask, setUpdatingTask] = useState<string | null>(null)
+
+  // client deliverables
+  const [newDelivByStep, setNewDelivByStep] = useState<Record<string, string>>({})
+  const [addingDeliv, setAddingDeliv] = useState<string | null>(null)
+  const [updatingDeliv, setUpdatingDeliv] = useState<string | null>(null)
+
+  // client_description per step (debounced save)
+  const [clientDescByStep, setClientDescByStep] = useState<Record<string, string>>({})
+  const debouncedClientDesc = useDebounce(clientDescByStep, 800)
+  const didMountClientDesc = useRef(false)
 
   // docs
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -132,12 +147,13 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     if (!id) return
     const load = async () => {
-      const [{ data: pData }, { data: docData }, { data: mnData }, { data: inData }, { data: gmData }] = await Promise.all([
-        supabase.from('projects').select(`id,name,project_type,client_id,brief_content,leaders,created_at,updated_at,project_steps(id,title,step_order,project_step_tasks(id,project_id,project_step_id,title,is_done,due_date,created_at,updated_at)),profiles:client_id(business_name)`).eq('id', id).single(),
+      const [{ data: pData }, { data: docData }, { data: mnData }, { data: inData }, { data: gmData }, { data: delivData }] = await Promise.all([
+        supabase.from('projects').select(`id,name,project_type,client_id,brief_content,leaders,created_at,updated_at,project_steps(id,title,step_order,client_description,project_step_tasks(id,project_id,project_step_id,title,is_done,due_date,created_at,updated_at)),profiles:client_id(business_name)`).eq('id', id).single(),
         supabase.from('project_documents').select('*').eq('project_id', id).order('created_at'),
         supabase.from('meeting_notes').select('*').eq('project_id', id).order('created_at', { ascending: false }),
         supabase.from('interview_notes').select('*').eq('project_id', id),
         supabase.from('gap_maps').select('id,title,status,created_at').eq('project_id', id).order('created_at', { ascending: false }),
+        supabase.from('client_deliverables').select('id,project_id,project_step_id,title,description,is_done,sort_order').eq('project_id', id).order('sort_order'),
       ])
 
       if (pData) {
@@ -145,6 +161,13 @@ export default function ProjectDetailPage() {
         setEditName(pData.name ?? '')
         const savedLeaders = pData.leaders ?? ['CEO / Founder','Leader 2','Leader 3','Leader 4','Leader 5','Leader 6']
         setLeaders(savedLeaders)
+
+        // seed client_description state from loaded steps
+        const descMap: Record<string, string> = {}
+        for (const s of (pData.project_steps ?? [])) {
+          descMap[s.id] = s.client_description ?? ''
+        }
+        setClientDescByStep(descMap)
 
         const isBAI = pData.project_type?.toLowerCase().includes('alignment') || pData.project_type?.toLowerCase().includes('intensive')
         if (isBAI) {
@@ -156,6 +179,7 @@ export default function ProjectDetailPage() {
       setMeetingNotes((mnData ?? []) as MeetingNote[])
       setInterviewNotes(inData ?? [])
       setLinkedGapMaps((gmData ?? []) as GapMap[])
+      setClientDeliverables((delivData ?? []) as ClientDeliverable[])
       setLoading(false)
     }
     load()
@@ -175,6 +199,14 @@ export default function ProjectDetailPage() {
     supabase.from('projects').update({ leaders: debouncedLeaders }).eq('id', id)
       .then(() => setSavingLeaders(false))
   }, [debouncedLeaders])
+
+  // ── auto-save client_description per step ─────────────────────────────────
+  useEffect(() => {
+    if (!didMountClientDesc.current) { didMountClientDesc.current = true; return }
+    for (const [stepId, desc] of Object.entries(debouncedClientDesc)) {
+      supabase.from('project_steps').update({ client_description: desc || null }).eq('id', stepId)
+    }
+  }, [debouncedClientDesc])
 
   // ── doc thumbnails ─────────────────────────────────────────────────────────
   useEffect(() => {
@@ -308,6 +340,37 @@ export default function ProjectDetailPage() {
     } finally {
       setCreatingGapMap(false)
     }
+  }
+
+  // ─── Client Deliverable actions ───────────────────────────────────────────────
+  const addDeliverable = async (stepId: string) => {
+    const text = (newDelivByStep[stepId] || '').trim()
+    if (!text) return
+    setAddingDeliv(stepId)
+    const currentMax = clientDeliverables.filter((d) => d.project_step_id === stepId).length
+    const { data } = await supabase.from('client_deliverables')
+      .insert({ project_id: id, project_step_id: stepId, title: text, is_done: false, sort_order: currentMax })
+      .select('id,project_id,project_step_id,title,description,is_done,sort_order').single()
+    setAddingDeliv(null)
+    if (!data) return
+    setClientDeliverables((p) => [...p, data as ClientDeliverable])
+    setNewDelivByStep((p) => ({ ...p, [stepId]: '' }))
+  }
+
+  const toggleDeliverable = async (delivId: string) => {
+    const deliv = clientDeliverables.find((d) => d.id === delivId)
+    if (!deliv) return
+    const next = !deliv.is_done
+    setClientDeliverables((p) => p.map((d) => d.id === delivId ? { ...d, is_done: next } : d))
+    setUpdatingDeliv(delivId)
+    await supabase.from('client_deliverables').update({ is_done: next }).eq('id', delivId)
+    setUpdatingDeliv(null)
+  }
+
+  const deleteDeliverable = async (delivId: string) => {
+    if (!confirm('Remove this client deliverable?')) return
+    setClientDeliverables((p) => p.filter((d) => d.id !== delivId))
+    await supabase.from('client_deliverables').delete().eq('id', delivId)
   }
 
   // ─── Task actions ──────────────────────────────────────────────────────────────
@@ -607,15 +670,23 @@ export default function ProjectDetailPage() {
                 const tasks = step.project_step_tasks
                 const done = tasks.filter((t) => t.is_done).length
                 const stepPct = tasks.length === 0 ? 0 : Math.round((done / tasks.length) * 100)
+                const stepDeliverables = clientDeliverables.filter((d) => d.project_step_id === step.id)
+                const delivDone = stepDeliverables.filter((d) => d.is_done).length
+
                 return (
-                  <div key={step.id} className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-4">
-                    <div className="flex items-start justify-between gap-4">
+                  <div key={step.id} className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+
+                    {/* Phase header */}
+                    <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-4">
                       <div>
                         <div className="flex items-center gap-2 mb-0.5">
                           <span className="text-xs font-mono text-neutral-400">{String(step.step_order).padStart(2,'0')}</span>
                           <h3 className="font-semibold text-neutral-900 text-base">{step.title}</h3>
                         </div>
-                        <p className="text-xs text-neutral-400">{tasks.length === 0 ? 'No tasks' : `${done}/${tasks.length} complete`}</p>
+                        <p className="text-xs text-neutral-400">
+                          {tasks.length === 0 ? 'No tasks' : `${done}/${tasks.length} Riley tasks`}
+                          {stepDeliverables.length > 0 && <span className="ml-2">· {delivDone}/{stepDeliverables.length} client items</span>}
+                        </p>
                       </div>
                       <div className="text-right shrink-0">
                         <p className="text-lg font-bold text-neutral-900">{stepPct}%</p>
@@ -625,40 +696,101 @@ export default function ProjectDetailPage() {
                       </div>
                     </div>
 
-                    {tasks.length > 0 && (
-                      <div className="space-y-2">
-                        {tasks.map((task) => (
-                          <div key={task.id} className={`flex items-center gap-3 p-3 border border-neutral-100 rounded-xl group ${updatingTask === task.id ? 'opacity-60' : ''}`}>
-                            <input type="checkbox" checked={task.is_done} onChange={() => toggleTask(step.id, task.id)}
-                              className="w-4 h-4 rounded accent-black shrink-0" />
-                            <span className={`flex-1 text-sm ${task.is_done ? 'line-through text-neutral-400' : 'text-neutral-800'}`}>{task.title}</span>
-                            <input type="date" value={task.due_date ?? ''}
-                              onChange={(e) => {
-                                const v = e.target.value
-                                setProject((p: any) => ({ ...p, project_steps: p.project_steps.map((s: any) => s.id !== step.id ? s : { ...s, project_step_tasks: s.project_step_tasks.map((t: Task) => t.id !== task.id ? t : { ...t, due_date: v || null }) }) }))
-                                supabase.from('project_step_tasks').update({ due_date: v || null }).eq('id', task.id)
-                              }}
-                              className="text-xs border border-neutral-200 rounded-lg px-2 py-1 focus:outline-none" />
-                            <button onClick={() => deleteTask(step.id, task.id)}
-                              className="text-xs text-neutral-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition px-1">✕</button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    {/* ── Riley's Tasks ── */}
+                    <div className="px-6 pb-4 space-y-3">
+                      <p className="text-xs font-bold uppercase tracking-wider text-neutral-400">Riley's Tasks</p>
 
-                    <div className="flex gap-2 pt-1">
-                      <input
-                        value={newTaskByStep[step.id] ?? ''}
-                        onChange={(e) => setNewTaskByStep((p) => ({ ...p, [step.id]: e.target.value }))}
-                        onKeyDown={(e) => e.key === 'Enter' && addTask(step.id)}
-                        placeholder="+ Add task…"
-                        className="flex-1 text-sm border border-neutral-200 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-black/10"
-                      />
-                      <button onClick={() => addTask(step.id)} disabled={addingStep === step.id}
-                        className="bg-black text-white text-sm px-4 rounded-xl disabled:opacity-50 hover:bg-neutral-800 transition">
-                        {addingStep === step.id ? '…' : 'Add'}
-                      </button>
+                      {tasks.length > 0 && (
+                        <div className="space-y-2">
+                          {tasks.map((task) => (
+                            <div key={task.id} className={`flex items-center gap-3 p-3 border border-neutral-100 rounded-xl group ${updatingTask === task.id ? 'opacity-60' : ''}`}>
+                              <input type="checkbox" checked={task.is_done} onChange={() => toggleTask(step.id, task.id)}
+                                className="w-4 h-4 rounded accent-black shrink-0" />
+                              <span className={`flex-1 text-sm ${task.is_done ? 'line-through text-neutral-400' : 'text-neutral-800'}`}>{task.title}</span>
+                              <input type="date" value={task.due_date ?? ''}
+                                onChange={(e) => {
+                                  const v = e.target.value
+                                  setProject((p: any) => ({ ...p, project_steps: p.project_steps.map((s: any) => s.id !== step.id ? s : { ...s, project_step_tasks: s.project_step_tasks.map((t: Task) => t.id !== task.id ? t : { ...t, due_date: v || null }) }) }))
+                                  supabase.from('project_step_tasks').update({ due_date: v || null }).eq('id', task.id)
+                                }}
+                                className="text-xs border border-neutral-200 rounded-lg px-2 py-1 focus:outline-none" />
+                              <button onClick={() => deleteTask(step.id, task.id)}
+                                className="text-xs text-neutral-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition px-1">✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex gap-2">
+                        <input
+                          value={newTaskByStep[step.id] ?? ''}
+                          onChange={(e) => setNewTaskByStep((p) => ({ ...p, [step.id]: e.target.value }))}
+                          onKeyDown={(e) => e.key === 'Enter' && addTask(step.id)}
+                          placeholder="+ Add Riley task…"
+                          className="flex-1 text-sm border border-neutral-200 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-black/10"
+                        />
+                        <button onClick={() => addTask(step.id)} disabled={addingStep === step.id}
+                          className="bg-black text-white text-sm px-4 rounded-xl disabled:opacity-50 hover:bg-neutral-800 transition">
+                          {addingStep === step.id ? '…' : 'Add'}
+                        </button>
+                      </div>
                     </div>
+
+                    {/* ── Client Deliverables ── */}
+                    <div className="px-6 pb-4 pt-1 space-y-3 border-t border-neutral-100 mt-1">
+                      <div className="flex items-center justify-between pt-3">
+                        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#7EC8A0' }}>Client Deliverables</p>
+                        {stepDeliverables.length > 0 && (
+                          <span className="text-xs text-neutral-400">{delivDone}/{stepDeliverables.length} complete</span>
+                        )}
+                      </div>
+
+                      {stepDeliverables.length > 0 && (
+                        <div className="space-y-2">
+                          {stepDeliverables.map((deliv) => (
+                            <div key={deliv.id} className={`flex items-center gap-3 p-3 border rounded-xl group ${updatingDeliv === deliv.id ? 'opacity-60' : ''} ${deliv.is_done ? 'border-neutral-100 bg-neutral-50' : 'border-neutral-200'}`}>
+                              <input type="checkbox" checked={deliv.is_done} onChange={() => toggleDeliverable(deliv.id)}
+                                className="w-4 h-4 rounded shrink-0" style={{ accentColor: '#7EC8A0' }} />
+                              <span className={`flex-1 text-sm ${deliv.is_done ? 'line-through text-neutral-400' : 'text-neutral-800'}`}>{deliv.title}</span>
+                              {deliv.is_done && <span className="text-xs font-bold shrink-0" style={{ color: '#7EC8A0' }}>✓</span>}
+                              <button onClick={() => deleteDeliverable(deliv.id)}
+                                className="text-xs text-neutral-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition px-1">✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex gap-2">
+                        <input
+                          value={newDelivByStep[step.id] ?? ''}
+                          onChange={(e) => setNewDelivByStep((p) => ({ ...p, [step.id]: e.target.value }))}
+                          onKeyDown={(e) => e.key === 'Enter' && addDeliverable(step.id)}
+                          placeholder="+ Add client deliverable…"
+                          className="flex-1 text-sm border border-neutral-200 rounded-xl px-4 py-2 focus:outline-none focus:ring-2 focus:ring-black/10"
+                        />
+                        <button onClick={() => addDeliverable(step.id)} disabled={addingDeliv === step.id}
+                          className="text-white text-sm px-4 rounded-xl disabled:opacity-50 transition"
+                          style={{ background: '#1A3428' }}>
+                          {addingDeliv === step.id ? '…' : 'Add'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* ── What Riley's Working On (client_description) ── */}
+                    <div className="px-6 pb-5 pt-1 space-y-2 border-t border-neutral-100">
+                      <div className="pt-3">
+                        <p className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-1">"What Riley's Working On" — Client-facing description</p>
+                        <p className="text-xs text-neutral-400 mb-2">This appears in the client portal under each phase to give them context on what you're doing.</p>
+                      </div>
+                      <textarea
+                        value={clientDescByStep[step.id] ?? ''}
+                        onChange={(e) => setClientDescByStep((p) => ({ ...p, [step.id]: e.target.value }))}
+                        rows={3}
+                        placeholder="e.g. Riley is conducting individual 60-minute interviews with each member of your leadership team…"
+                        className="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-black/10 placeholder-neutral-300"
+                      />
+                    </div>
+
                   </div>
                 )
               })

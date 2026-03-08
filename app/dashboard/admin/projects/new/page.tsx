@@ -79,35 +79,45 @@ export default function NewProjectPage() {
         .single()
       if (pErr || !project) throw pErr
 
-      // 2. Create steps from template phases
+      // 2. Create steps from template phases (with client_description from SOP)
       const phases = selected?.phases ?? ['Phase 1']
       const { data: insertedSteps, error: sErr } = await supabase
         .from('project_steps')
-        .insert(phases.map((title, i) => ({ project_id: project.id, title, step_order: i + 1 })))
+        .insert(phases.map((title, i) => ({
+          project_id: project.id,
+          title,
+          step_order: i + 1,
+          client_description: selected?.sop_phases?.[i]?.description ?? null,
+        })))
         .select('id, title')
       if (sErr) throw sErr
 
-      // 3. Seed tasks from sop_phases riley_does (BAI and any template with sop_phases)
+      // 3. Seed Riley's tasks + client deliverables from sop_phases
       if (selected?.sop_phases?.length && insertedSteps?.length) {
         const taskRows: { project_id: string; project_step_id: string; title: string; is_done: boolean }[] = []
+        const deliverableRows: { project_id: string; project_step_id: string; title: string; is_done: boolean; sort_order: number }[] = []
 
         insertedSteps.forEach((step, idx) => {
           const sopPhase = selected.sop_phases![idx]
           if (!sopPhase) return
+
+          // Riley's tasks
           sopPhase.riley_does.forEach((taskTitle) => {
-            taskRows.push({
-              project_id: project.id,
-              project_step_id: step.id,
-              title: taskTitle,
-              is_done: false,
-            })
+            taskRows.push({ project_id: project.id, project_step_id: step.id, title: taskTitle, is_done: false })
+          })
+
+          // Client deliverables
+          ;(sopPhase.client_does ?? []).forEach((title, sortIdx) => {
+            deliverableRows.push({ project_id: project.id, project_step_id: step.id, title, is_done: false, sort_order: sortIdx })
           })
         })
 
-        if (taskRows.length) {
-          const { error: tErr } = await supabase.from('project_step_tasks').insert(taskRows)
-          if (tErr) console.error('Task seed error:', tErr)
-        }
+        const [taskResult, delivResult] = await Promise.all([
+          taskRows.length ? supabase.from('project_step_tasks').insert(taskRows) : Promise.resolve({ error: null }),
+          deliverableRows.length ? supabase.from('client_deliverables').insert(deliverableRows) : Promise.resolve({ error: null }),
+        ])
+        if (taskResult.error) console.error('Task seed error:', taskResult.error)
+        if (delivResult.error) console.error('Deliverable seed error:', delivResult.error)
       }
 
       router.push(`/dashboard/admin/projects/${project.id}`)
@@ -149,7 +159,7 @@ export default function NewProjectPage() {
                       </span>
                       {tpl.duration && <span className="text-xs text-neutral-400">{tpl.duration}</span>}
                       {taskCount > 0 && (
-                        <span className="text-xs text-neutral-400">{taskCount} pre-seeded tasks</span>
+                        <span className="text-xs text-neutral-400">{taskCount} Riley tasks pre-seeded</span>
                       )}
                     </div>
                     <h2 className="text-lg font-bold text-neutral-900 group-hover:text-black">{tpl.name}</h2>
@@ -215,11 +225,14 @@ export default function NewProjectPage() {
           <div className="flex-1">
             <p className="text-xs text-neutral-400 uppercase tracking-wider font-medium">Template</p>
             <p className="font-semibold text-neutral-900">{selected.name}</p>
-            {taskCount > 0 && (
-              <p className="text-xs text-neutral-400 mt-1">
-                Will auto-create {selected.phases?.length} phases with {taskCount} pre-seeded tasks from the SOP
-              </p>
-            )}
+            {taskCount > 0 && (() => {
+                const clientCount = selected.sop_phases?.reduce((sum, p) => sum + (p.client_does?.length ?? 0), 0) ?? 0
+                return (
+                  <p className="text-xs text-neutral-400 mt-1">
+                    Will auto-create {selected.phases?.length} phases with {taskCount} Riley tasks + {clientCount} client deliverables
+                  </p>
+                )
+              })()}
           </div>
         </div>
       )}
@@ -266,7 +279,7 @@ export default function NewProjectPage() {
                   <span className="text-xs font-mono text-neutral-400 w-5 shrink-0 pt-0.5">{phase.number}</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-neutral-800">{phase.name}</p>
-                    <p className="text-xs text-neutral-400 mt-0.5">{phase.riley_does.length} tasks pre-seeded</p>
+                    <p className="text-xs text-neutral-400 mt-0.5">{phase.riley_does.length} Riley tasks · {phase.client_does?.length ?? 0} client deliverables</p>
                   </div>
                   <span className="text-xs text-neutral-300">{phase.tag}</span>
                 </div>
