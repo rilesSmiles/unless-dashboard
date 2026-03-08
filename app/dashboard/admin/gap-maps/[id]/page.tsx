@@ -249,12 +249,12 @@ export default function GapMapEditorPage() {
   return (
     <div className="min-h-screen bg-neutral-50 pb-32">
       {/* ── Page Header ── */}
-      <div className="bg-black px-6 pt-8 pb-6">
+      <div className="px-6 pt-8 pb-6" style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 55%)' }}>
         <div className="max-w-4xl mx-auto">
           {/* Back + save indicator */}
           <div className="flex items-center justify-between mb-4">
             <button onClick={() => router.push('/dashboard/admin/gap-maps')}
-              className="text-neutral-400 hover:text-white text-sm transition flex items-center gap-1">
+              className="text-[#7EC8A0] hover:text-white text-sm transition flex items-center gap-1">
               ← Gap Maps
             </button>
             <div className="flex items-center gap-3">
@@ -267,7 +267,7 @@ export default function GapMapEditorPage() {
               {map.status !== 'complete' && (
                 <button
                   onClick={markComplete}
-                  className="text-xs font-medium px-3 py-1.5 bg-amber-400 text-black rounded-lg hover:bg-amber-300 transition"
+                  className="text-xs font-medium px-3 py-1.5 bg-[#F04D3D] text-white rounded-lg hover:bg-[#d43f30] transition"
                 >
                   Mark Complete
                 </button>
@@ -300,7 +300,7 @@ export default function GapMapEditorPage() {
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               className={`px-5 py-3 text-sm font-medium border-b-2 transition -mb-px ${
                 activeTab === tab.id
-                  ? 'border-amber-400 text-amber-400'
+                  ? 'border-[#F04D3D] text-[#F04D3D]'
                   : 'border-transparent text-neutral-500 hover:text-neutral-300'
               }`}>
               {tab.label}
@@ -550,9 +550,9 @@ export default function GapMapEditorPage() {
                     )}
 
                     {cat.recommendation && (
-                      <div className="ml-8 p-3 bg-amber-50 border border-amber-100 rounded-xl mt-2">
-                        <p className="text-xs text-amber-700 font-medium uppercase tracking-wider mb-0.5">Recommendation</p>
-                        <p className="text-sm text-amber-900">{cat.recommendation}</p>
+                      <div className="ml-8 p-3 bg-[#1A3428]/8 border border-[#1A3428]/20 rounded-xl mt-2">
+                        <p className="text-xs text-[#1A3428] font-medium uppercase tracking-wider mb-0.5">Recommendation</p>
+                        <p className="text-sm text-[#1A3428]">{cat.recommendation}</p>
                       </div>
                     )}
                   </div>
@@ -571,7 +571,7 @@ export default function GapMapEditorPage() {
               {map.status !== 'complete' && (
                 <button
                   onClick={markComplete}
-                  className="bg-black text-white text-sm font-medium px-5 py-2.5 rounded-xl hover:bg-neutral-800 transition"
+                  className="bg-[#F04D3D] text-white text-sm font-medium px-5 py-2.5 rounded-xl hover:bg-[#d43f30] transition"
                 >
                   Mark as Complete ✓
                 </button>

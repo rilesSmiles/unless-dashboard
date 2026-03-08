@@ -116,20 +116,21 @@ export default function AdminAccountDetailPage() {
     <div className="min-h-screen bg-neutral-50 pb-32">
 
       {/* Header */}
-      <div className="bg-black px-6 pt-8 pb-8">
+      <div className="px-6 pt-8 pb-0" style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 55%)' }}>
         <div className="max-w-5xl mx-auto">
           <button onClick={() => router.push('/dashboard/admin/accounts')}
-            className="text-neutral-500 hover:text-white text-sm transition mb-4 flex items-center gap-1">
+            className="text-[#7EC8A0] hover:text-white text-sm transition mb-4 flex items-center gap-1">
             ← Accounts
           </button>
-          <div className="flex items-end justify-between gap-4">
+          <div className="flex items-end justify-between gap-4 pb-6">
             <div className="flex items-center gap-5">
-              <div className="w-14 h-14 rounded-2xl bg-neutral-800 text-white flex items-center justify-center text-lg font-bold shrink-0">
+              <div className="w-14 h-14 rounded-2xl bg-black/40 border border-white/10 text-white flex items-center justify-center text-lg font-bold shrink-0">
                 {displayName.split(' ').map((w) => w[0]).slice(0,2).join('').toUpperCase()}
               </div>
               <div>
-                <h1 className="text-2xl font-bold text-white">{displayName}</h1>
-                <p className="text-neutral-500 text-sm mt-0.5">
+                <p className="text-xs font-mono text-[#7EC8A0] uppercase tracking-widest mb-1">Client</p>
+                <h1 className="text-2xl text-white leading-tight">{displayName}</h1>
+                <p className="text-neutral-400 text-sm mt-0.5">
                   {primary?.name ?? client.name ?? ''}
                   {(primary?.position ?? client.position) ? ` · ${primary?.position ?? client.position}` : ''}
                 </p>
@@ -138,16 +139,16 @@ export default function AdminAccountDetailPage() {
             {/* Stats */}
             <div className="hidden sm:flex items-center gap-6 pb-1">
               <div className="text-right">
-                <p className="text-xl font-bold text-amber-400">{fmtMoney(totalOwed)}</p>
-                <p className="text-xs text-neutral-500">outstanding</p>
+                <p className="text-xl font-bold text-[#F04D3D]">{fmtMoney(totalOwed)}</p>
+                <p className="text-xs text-neutral-400">outstanding</p>
               </div>
               <div className="text-right">
                 <p className="text-xl font-bold text-green-400">{fmtMoney(totalPaid)}</p>
-                <p className="text-xs text-neutral-500">collected</p>
+                <p className="text-xs text-neutral-400">collected</p>
               </div>
               <div className="text-right">
                 <p className="text-xl font-bold text-white">{projects.length}</p>
-                <p className="text-xs text-neutral-500">project{projects.length !== 1 ? 's' : ''}</p>
+                <p className="text-xs text-neutral-400">project{projects.length !== 1 ? 's' : ''}</p>
               </div>
             </div>
           </div>
@@ -277,7 +278,7 @@ export default function AdminAccountDetailPage() {
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-medium text-neutral-900">{c.name ?? '—'}</p>
                         {c.is_primary && (
-                          <span className="text-xs px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 font-medium">Primary</span>
+                          <span className="text-xs px-1.5 py-0.5 rounded-full bg-[#1A3428]/10 text-[#1A3428] font-medium">Primary</span>
                         )}
                       </div>
                       {c.position && <p className="text-xs text-neutral-400">{c.position}</p>}

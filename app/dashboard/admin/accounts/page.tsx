@@ -23,7 +23,7 @@ type Invoice = {
 }
 
 const TYPE_PIP: Record<string, string> = {
-  'Brand Alignment Intensive':  'bg-amber-400',
+  'Brand Alignment Intensive':  'bg-[#F04D3D]',
   'Brand System Build':         'bg-stone-400',
   'Brand Stewardship Retainer': 'bg-neutral-400',
 }
@@ -100,20 +100,22 @@ export default function AccountsPage() {
   return (
     <div className="min-h-screen bg-neutral-50 pb-32">
 
-      {/* Header */}
-      <div className="bg-black px-6 pt-10 pb-8">
-        <div className="max-w-5xl mx-auto flex items-end justify-between gap-4">
-          <div>
-            <p className="text-xs font-mono text-neutral-400 uppercase tracking-widest mb-1">Unless Creative</p>
-            <h1 className="text-3xl font-bold text-white">Accounts</h1>
-            <p className="text-neutral-500 text-sm mt-1">
-              {clientsOnly.length === 0 ? 'No clients yet' : `${clientsOnly.length} client${clientsOnly.length === 1 ? '' : 's'}`}
-            </p>
+      {/* ── Header ── */}
+      <div className="px-6 pt-10 pb-8" style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 55%)' }}>
+        <div className="max-w-5xl mx-auto">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <p className="text-xs font-mono text-[#7EC8A0] uppercase tracking-widest mb-2">Unless Creative</p>
+              <h1 className="text-3xl text-white leading-tight">Accounts</h1>
+              <p className="text-neutral-400 text-sm mt-1">
+                {clientsOnly.length === 0 ? 'No clients yet' : `${clientsOnly.length} client${clientsOnly.length === 1 ? '' : 's'}`}
+              </p>
+            </div>
+            <button onClick={() => router.push('/dashboard/admin/accounts/new')}
+              className="text-sm font-semibold px-5 py-2.5 bg-[#F04D3D] text-white rounded-xl hover:bg-[#d43f30] transition shrink-0">
+              + New Client
+            </button>
           </div>
-          <button onClick={() => router.push('/dashboard/admin/accounts/new')}
-            className="text-sm font-medium px-5 py-2.5 bg-amber-400 text-black rounded-xl hover:bg-amber-300 transition shrink-0">
-            + New Client
-          </button>
         </div>
       </div>
 
@@ -172,7 +174,7 @@ export default function AccountsPage() {
                       )}
                       {clientInvoices.length > 0 && (
                         <div className="text-center">
-                          <p className="text-lg font-bold text-amber-500">{fmtMoney(outstandingTotal)}</p>
+                          <p className="text-lg font-bold text-[#F04D3D]">{fmtMoney(outstandingTotal)}</p>
                           <p className="text-xs text-neutral-400">outstanding</p>
                         </div>
                       )}

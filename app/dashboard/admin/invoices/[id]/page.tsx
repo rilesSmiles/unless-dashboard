@@ -203,7 +203,7 @@ export default function InvoiceDetailPage() {
               <p className="text-neutral-400 text-xs uppercase tracking-widest font-medium">
                 {invoice.is_deposit ? 'Deposit Invoice' : 'Invoice'}
               </p>
-              <p className="text-amber-400 text-3xl font-bold mt-1">{invoice.invoice_number ?? 'Draft'}</p>
+              <p className="text-[#F04D3D] text-3xl font-bold mt-1">{invoice.invoice_number ?? 'Draft'}</p>
               <div className="mt-4 space-y-1 text-right">
                 <div className="flex items-center justify-end gap-3">
                   <span className="text-neutral-500 text-xs">Issue Date</span>
@@ -213,7 +213,7 @@ export default function InvoiceDetailPage() {
                   <span className="text-neutral-500 text-xs">Due Date</span>
                   {isEditable ? (
                     <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)}
-                      className="bg-neutral-800 text-neutral-300 text-xs border border-neutral-700 rounded-lg px-2 py-1 focus:outline-none focus:border-amber-400" />
+                      className="bg-neutral-800 text-neutral-300 text-xs border border-neutral-700 rounded-lg px-2 py-1 focus:outline-none focus:border-[#F04D3D]" />
                   ) : (
                     <span className="text-neutral-300 text-xs">{fmtDate(dueDate)}</span>
                   )}
@@ -269,7 +269,7 @@ export default function InvoiceDetailPage() {
                   <p className="text-sm text-neutral-500">{invoice.business_name}</p>
                 )}
                 {invoice.quote_id && (
-                  <p className="text-xs text-amber-600 mt-2">Converted from quote</p>
+                  <p className="text-xs text-[#F04D3D] mt-2">Converted from quote</p>
                 )}
                 {!invoice.project_name && <p className="text-sm text-neutral-400">No project linked</p>}
               </div>
@@ -406,7 +406,7 @@ export default function InvoiceDetailPage() {
           {invoice.checkout_url && (
             <div className="px-10 pb-8">
               <a href={invoice.checkout_url} target="_blank" rel="noreferrer"
-                className="inline-flex items-center gap-2 text-sm font-medium text-amber-700 bg-amber-50 border border-amber-200 px-4 py-2 rounded-xl hover:bg-amber-100 transition">
+                className="inline-flex items-center gap-2 text-sm font-medium text-[#F04D3D] bg-[#F04D3D]/5 border border-[#F04D3D]/20 px-4 py-2 rounded-xl hover:bg-[#F04D3D]/10 transition">
                 Pay Now →
               </a>
             </div>

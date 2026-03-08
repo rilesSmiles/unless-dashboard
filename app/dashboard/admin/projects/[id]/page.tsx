@@ -422,17 +422,17 @@ export default function ProjectDetailPage() {
     <div className="min-h-screen bg-neutral-50 pb-32">
 
       {/* ── Header ── */}
-      <div className="bg-black px-6 pt-8 pb-0">
+      <div className="px-6 pt-8 pb-0" style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 55%)' }}>
         <div className="max-w-5xl mx-auto">
           <button onClick={() => router.push('/dashboard/admin/projects')}
-            className="text-neutral-500 hover:text-white text-sm transition mb-4 flex items-center gap-1">
+            className="text-[#7EC8A0] hover:text-white text-sm transition mb-4 flex items-center gap-1">
             ← Projects
           </button>
           <div className="flex items-start justify-between gap-4 pb-5">
             <div className="flex-1">
               <div className="flex items-center gap-3 mb-1 flex-wrap">
                 {project.project_type && (
-                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-400/20 text-amber-300 border border-amber-400/30">
+                  <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[#1A3428]/80 text-[#7EC8A0] border border-[#7EC8A0]/30">
                     {project.project_type}
                   </span>
                 )}
@@ -445,7 +445,7 @@ export default function ProjectDetailPage() {
               />
             </div>
             <div className="shrink-0 text-right">
-              <p className="text-3xl font-bold text-amber-400">{pct}%</p>
+              <p className="text-3xl font-bold text-[#F04D3D]">{pct}%</p>
               <p className="text-xs text-neutral-500">complete</p>
             </div>
           </div>
@@ -455,7 +455,7 @@ export default function ProjectDetailPage() {
           {tabs.map((t) => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={`px-5 py-3 text-sm font-medium border-b-2 transition -mb-px ${
-                tab === t.id ? 'border-amber-400 text-amber-400' : 'border-transparent text-neutral-500 hover:text-neutral-300'
+                tab === t.id ? 'border-[#F04D3D] text-[#F04D3D]' : 'border-transparent text-neutral-500 hover:text-neutral-300'
               }`}>
               {t.label}
             </button>
@@ -475,13 +475,13 @@ export default function ProjectDetailPage() {
               <div className="md:col-span-2">
                 {linkedGapMaps.map((gm) => (
                   <button key={gm.id} onClick={() => router.push(`/dashboard/admin/gap-maps/${gm.id}`)}
-                    className="w-full text-left bg-black border border-neutral-800 rounded-2xl px-6 py-4 flex items-center justify-between gap-4 hover:border-amber-400/50 transition group">
+                    className="w-full text-left bg-black border border-neutral-800 rounded-2xl px-6 py-4 flex items-center justify-between gap-4 hover:border-[#F04D3D]/50 transition group">
                     <div className="flex items-center gap-4">
-                      <div className="w-8 h-8 rounded-full bg-amber-400/20 flex items-center justify-center shrink-0">
-                        <span className="text-amber-400 text-sm">◆</span>
+                      <div className="w-8 h-8 rounded-full bg-[#F04D3D]/20 flex items-center justify-center shrink-0">
+                        <span className="text-[#F04D3D] text-sm">◆</span>
                       </div>
                       <div>
-                        <p className="text-xs font-mono text-amber-400 uppercase tracking-widest mb-0.5">Alignment Gap Map</p>
+                        <p className="text-xs font-mono text-[#F04D3D] uppercase tracking-widest mb-0.5">Alignment Gap Map</p>
                         <p className="text-white font-semibold">{gm.title}</p>
                       </div>
                     </div>
@@ -489,7 +489,7 @@ export default function ProjectDetailPage() {
                       <span className={`text-xs px-2 py-1 rounded-full font-medium ${gm.status === 'complete' ? 'bg-green-900 text-green-400' : 'bg-neutral-800 text-neutral-400'}`}>
                         {gm.status === 'complete' ? '✓ Complete' : 'Draft'}
                       </span>
-                      <span className="text-neutral-500 group-hover:text-amber-400 transition text-sm">→</span>
+                      <span className="text-neutral-500 group-hover:text-[#F04D3D] transition text-sm">→</span>
                     </div>
                   </button>
                 ))}
@@ -699,7 +699,7 @@ export default function ProjectDetailPage() {
                       )}
                       {/* Note indicator dot */}
                       {interviewQuestions.some((_, qi) => getInterviewNote(i, qi).trim()) && (
-                        <span className="absolute top-2 right-1 w-1.5 h-1.5 rounded-full bg-amber-400" />
+                        <span className="absolute top-2 right-1 w-1.5 h-1.5 rounded-full bg-[#F04D3D]" />
                       )}
                     </div>
                   ))}
@@ -743,7 +743,7 @@ export default function ProjectDetailPage() {
                             {hasBreathe && <span className="text-xs px-2 py-0.5 rounded-full bg-sky-50 text-sky-700 border border-sky-200 font-medium">BREATHE</span>}
                           </div>
                           {q.watch_for && (
-                            <p className="mt-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-1.5">
+                            <p className="mt-1.5 text-xs text-[#1A3428] bg-[#1A3428]/5 border border-[#1A3428]/15 rounded-lg px-3 py-1.5">
                               <span className="font-semibold">Watch for:</span> {q.watch_for}
                             </p>
                           )}
@@ -780,7 +780,7 @@ export default function ProjectDetailPage() {
                   </p>
                   {linkedGapMaps.length > 0 && (
                     <button onClick={() => router.push(`/dashboard/admin/gap-maps/${linkedGapMaps[0].id}`)}
-                      className="mt-3 text-sm font-medium text-amber-600 hover:text-amber-800 transition underline">
+                      className="mt-3 text-sm font-medium text-[#F04D3D] hover:opacity-80 transition underline">
                       Open Gap Map →
                     </button>
                   )}
@@ -793,7 +793,7 @@ export default function ProjectDetailPage() {
                       {leaders.map((_, li) => (
                         <div key={li} className={`w-2 h-2 rounded-full transition ${
                           interviewQuestions.some((_, qi) => getInterviewNote(li, qi).trim())
-                            ? 'bg-amber-400'
+                            ? 'bg-[#F04D3D]'
                             : 'bg-neutral-200'
                         }`} />
                       ))}
@@ -821,7 +821,7 @@ export default function ProjectDetailPage() {
                     <span>{leadersWithNotes} of {leaders.length}</span>
                   </div>
                   <div className="w-full bg-neutral-100 rounded-full h-1.5">
-                    <div className={`h-1.5 rounded-full transition-all ${leadersWithNotes >= 2 ? 'bg-amber-400' : 'bg-neutral-300'}`}
+                    <div className={`h-1.5 rounded-full transition-all ${leadersWithNotes >= 2 ? 'bg-[#F04D3D]' : 'bg-neutral-300'}`}
                       style={{ width: `${Math.min(100, (leadersWithNotes / leaders.length) * 100)}%` }} />
                   </div>
                 </div>
@@ -963,7 +963,7 @@ function InternalNotes({ projectId }: { projectId: string }) {
         {todos.length === 0 && <p className="text-sm text-neutral-400">No notes yet</p>}
         {todos.map((t) => (
           <div key={t.id} className="flex items-start gap-3 group">
-            <span className="text-amber-400 mt-0.5 shrink-0 text-xs">◆</span>
+            <span className="text-[#F04D3D] mt-0.5 shrink-0 text-xs">◆</span>
             <p className="flex-1 text-sm text-neutral-700">{t.text}</p>
             <button onClick={() => del(t.id)} className="text-xs text-neutral-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition">✕</button>
           </div>

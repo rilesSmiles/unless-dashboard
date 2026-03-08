@@ -232,14 +232,14 @@ export default function QuoteDetailPage() {
             {/* Convert to Invoice — the big one */}
             {(quote.status === 'accepted' || quote.status === 'sent' || quote.status === 'draft') && !isConverted && (
               <button onClick={convertToInvoice} disabled={converting}
-                className="text-sm font-semibold px-5 py-2 bg-amber-400 text-black rounded-xl hover:bg-amber-300 transition disabled:opacity-50 flex items-center gap-2">
+                className="text-sm font-semibold px-5 py-2 bg-[#F04D3D] text-white rounded-xl hover:bg-[#d43f30] transition disabled:opacity-50 flex items-center gap-2">
                 {converting ? 'Converting…' : '◆ Convert to Invoice'}
               </button>
             )}
 
             {isConverted && quote.converted_invoice_id && (
               <button onClick={() => router.push(`/dashboard/admin/invoices/${quote.converted_invoice_id}`)}
-                className="text-sm font-medium px-4 py-2 bg-amber-50 text-amber-700 border border-amber-200 rounded-xl hover:bg-amber-100 transition">
+                className="text-sm font-medium px-4 py-2 bg-neutral-100 text-neutral-700 border border-neutral-200 rounded-xl hover:bg-neutral-200 transition">
                 View Invoice →
               </button>
             )}
@@ -265,7 +265,7 @@ export default function QuoteDetailPage() {
             </div>
             <div className="text-right">
               <p className="text-neutral-400 text-xs uppercase tracking-widest font-medium">Quote</p>
-              <p className="text-amber-400 text-3xl font-bold mt-1">{quote.quote_number ?? 'Draft'}</p>
+              <p className="text-[#F04D3D] text-3xl font-bold mt-1">{quote.quote_number ?? 'Draft'}</p>
               <div className="mt-4 space-y-1 text-right">
                 <div className="flex items-center justify-end gap-3">
                   <span className="text-neutral-500 text-xs">Issue Date</span>
@@ -275,7 +275,7 @@ export default function QuoteDetailPage() {
                   <span className="text-neutral-500 text-xs">Valid Until</span>
                   {isEditable ? (
                     <input type="date" value={validUntil} onChange={(e) => setValidUntil(e.target.value)}
-                      className="bg-neutral-800 text-neutral-300 text-xs border border-neutral-700 rounded-lg px-2 py-1 focus:outline-none focus:border-amber-400" />
+                      className="bg-neutral-800 text-neutral-300 text-xs border border-neutral-700 rounded-lg px-2 py-1 focus:outline-none focus:border-[#F04D3D]" />
                   ) : (
                     <span className="text-neutral-300 text-xs">{fmtDate(validUntil)}</span>
                   )}
@@ -446,13 +446,13 @@ export default function QuoteDetailPage() {
           {/* Convert CTA — inside document too */}
           {(quote.status === 'accepted' || quote.status === 'sent' || quote.status === 'draft') && !isConverted && (
             <div className="px-10 pb-8">
-              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 flex items-center justify-between gap-4">
+              <div className="bg-[#1A3428]/5 border border-[#1A3428]/20 rounded-2xl p-5 flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-sm font-semibold text-amber-900">Ready to invoice?</p>
-                  <p className="text-xs text-amber-700 mt-0.5">All line items will carry over — no re-entry needed.</p>
+                  <p className="text-sm font-semibold text-[#1A3428]">Ready to invoice?</p>
+                  <p className="text-xs text-[#1A3428]/70 mt-0.5">All line items will carry over — no re-entry needed.</p>
                 </div>
                 <button onClick={convertToInvoice} disabled={converting}
-                  className="text-sm font-semibold px-5 py-2.5 bg-black text-white rounded-xl hover:bg-neutral-800 transition disabled:opacity-50 whitespace-nowrap">
+                  className="text-sm font-semibold px-5 py-2.5 bg-[#F04D3D] text-white rounded-xl hover:bg-[#d43f30] transition disabled:opacity-50 whitespace-nowrap">
                   {converting ? 'Converting…' : '◆ Convert to Invoice'}
                 </button>
               </div>
@@ -465,7 +465,7 @@ export default function QuoteDetailPage() {
               <div className="bg-neutral-50 border border-neutral-200 rounded-2xl p-5 flex items-center justify-between gap-4">
                 <p className="text-sm text-neutral-600">This quote has been converted to an invoice.</p>
                 <button onClick={() => router.push(`/dashboard/admin/invoices/${quote.converted_invoice_id}`)}
-                  className="text-sm font-medium text-amber-700 hover:text-amber-900 underline transition whitespace-nowrap">
+                  className="text-sm font-medium text-[#F04D3D] hover:opacity-80 underline transition whitespace-nowrap">
                   View Invoice →
                 </button>
               </div>
