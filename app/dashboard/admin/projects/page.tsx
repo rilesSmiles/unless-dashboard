@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
-type Project = {
+export type Project = {
   id: string; name: string; project_type: string | null
   status: string | null; created_at: string; last_viewed_at: string | null
   client_id: string | null; business_name: string | null
