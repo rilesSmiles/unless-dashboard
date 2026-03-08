@@ -4,290 +4,373 @@ import { supabase } from '@/lib/supabase'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 
-type ProjectRow = {
+type StepTask = {
   id: string
-  name: string
-  created_at: string
-}
-
-type ProjectDoc = {
-  id: string
-  project_id: string
-  title: string
-  created_at: string
-  embed_url: string | null
-  storage_path: string | null
-  file_type: string | null
-}
-
-type ProjectTask = {
-  id: string
-  project_id: string
-  title: string
-  created_at: string
-  updated_at: string
-}
-
-type ProjectTodo = {
-  id: string
-  project_id: string
-  text: string
-  created_at: string
-  completed_at: string | null
   is_done: boolean
 }
 
-type WhatsNewItem =
-  | { type: 'doc'; project_id: string; title: string; ts: string; doc_id: string }
-  | { type: 'task'; project_id: string; title: string; ts: string; task_id: string }
-  | { type: 'todo'; project_id: string; text: string; ts: string; todo_id: string }
+type Step = {
+  id: string
+  title: string
+  step_order: number
+  project_step_tasks: StepTask[]
+}
 
-function toIso(d: Date) {
-  return d.toISOString()
+type Project = {
+  id: string
+  name: string
+  project_type: string | null
+  created_at: string
+  project_steps: Step[]
+}
+
+type RecentDoc = {
+  id: string
+  project_id: string
+  title: string
+  file_type: string | null
+  embed_url: string | null
+  created_at: string
+}
+
+type Invoice = {
+  id: string
+  status: string | null
+  amount_cents: number | null
+  currency: string | null
+  due_date: string | null
+}
+
+function formatMoney(cents: number | null, currency: string | null) {
+  if (cents == null) return '$0'
+  try {
+    return new Intl.NumberFormat('en-CA', {
+      style: 'currency',
+      currency: (currency || 'CAD').toUpperCase(),
+      maximumFractionDigits: 0,
+    }).format(cents / 100)
+  } catch {
+    return `$${(cents / 100).toFixed(0)}`
+  }
+}
+
+function formatDate(ts: string) {
+  return new Date(ts).toLocaleDateString('en-CA', { month: 'short', day: 'numeric' })
+}
+
+function typeLabel(type: string | null) {
+  if (!type) return null
+  if (type === 'brand-alignment-intensive' || type === 'BAI') return 'Brand Alignment Intensive'
+  if (type === 'brand-system-build' || type === 'BSB') return 'Brand System Build'
+  if (type === 'brand-stewardship-retainer' || type === 'BSR') return 'Brand Stewardship Retainer'
+  return type
 }
 
 export default function ClientDashboardPage() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
-  const [projects, setProjects] = useState<ProjectRow[]>([])
-  const [whatsNew, setWhatsNew] = useState<WhatsNewItem[]>([])
+  const [profile, setProfile] = useState<{ name: string | null } | null>(null)
+  const [projects, setProjects] = useState<Project[]>([])
+  const [recentDocs, setRecentDocs] = useState<RecentDoc[]>([])
+  const [invoices, setInvoices] = useState<Invoice[]>([])
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
 
   useEffect(() => {
     const load = async () => {
-      setLoading(true)
-      setErrorMsg(null)
-
-      // 1) auth user
-      const { data: authData, error: authErr } = await supabase.auth.getUser()
+      const { data: authData } = await supabase.auth.getUser()
       const userId = authData?.user?.id
+      if (!userId) { setErrorMsg('Not signed in.'); setLoading(false); return }
 
-      if (authErr || !userId) {
-        setErrorMsg('You must be signed in to view your dashboard.')
-        setLoading(false)
-        return
-      }
-
-      // 2) profile -> last_seen_at (profile id = client id in your setup)
-      const { data: profile, error: profErr } = await supabase
+      // Profile
+      const { data: profileData } = await supabase
         .from('profiles')
-        .select('id, last_seen_at')
+        .select('id, name, last_seen_at')
         .eq('id', userId)
         .single()
 
-      if (profErr || !profile?.id) {
-        setErrorMsg('No client profile found for this account.')
-        setLoading(false)
-        return
-      }
+      setProfile({ name: profileData?.name ?? null })
 
-      const clientId = profile.id as string
-      const lastSeenAt = (profile.last_seen_at as string | null) ?? null
-
-      // 3) projects for this client
-      const { data: projData, error: projErr } = await supabase
+      // Projects with steps + tasks
+      const { data: projData } = await supabase
         .from('projects')
-        .select('id, name, created_at')
-        .eq('client_id', clientId)
+        .select(`
+          id, name, project_type, created_at,
+          project_steps (
+            id, title, step_order,
+            project_step_tasks ( id, is_done )
+          )
+        `)
+        .eq('client_id', userId)
         .order('created_at', { ascending: false })
 
-      if (projErr) {
-        console.error('Load projects error:', projErr)
-        setErrorMsg('Could not load projects.')
-        setLoading(false)
-        return
-      }
+      const loadedProjects = (projData ?? []) as Project[]
+      setProjects(loadedProjects)
 
-      const projectRows = (projData || []) as ProjectRow[]
-      setProjects(projectRows)
+      const projectIds = loadedProjects.map((p) => p.id)
 
-      const projectIds = projectRows.map((p) => p.id)
-
-      // If first visit, show last 14 days
-      const fallbackSince = toIso(new Date(Date.now() - 14 * 24 * 60 * 60 * 1000))
-      const since = lastSeenAt ?? fallbackSince
-
-      // 4) WHAT'S NEW: docs + tasks + todos since `since`
-      let newItems: WhatsNewItem[] = []
-
+      // Recent uploads (always show last 5 for review)
       if (projectIds.length > 0) {
-        // docs
-        const { data: docsData, error: docsErr } = await supabase
+        const { data: docData } = await supabase
           .from('project_documents')
-          .select('id, project_id, title, created_at, embed_url, storage_path, file_type')
+          .select('id, project_id, title, file_type, embed_url, created_at')
           .in('project_id', projectIds)
-          .gt('created_at', since)
           .order('created_at', { ascending: false })
-          .limit(20)
-
-        if (docsErr) console.error('Load whats-new docs error:', docsErr)
-
-        const docs = (docsData || []) as ProjectDoc[]
-        newItems = newItems.concat(
-          docs.map((d) => ({
-            type: 'doc' as const,
-            project_id: d.project_id,
-            title: d.title,
-            ts: d.created_at,
-            doc_id: d.id,
-          }))
-        )
-
-        // tasks updated since last visit
-        const { data: tasksData, error: tasksErr } = await supabase
-          .from('project_step_tasks')
-          .select('id, project_id, title, created_at, updated_at')
-          .in('project_id', projectIds)
-          .gt('updated_at', since)
-          .order('updated_at', { ascending: false })
-          .limit(20)
-
-        if (tasksErr) console.error('Load whats-new tasks error:', tasksErr)
-
-        const tasks = (tasksData || []) as ProjectTask[]
-        newItems = newItems.concat(
-          tasks.map((t) => ({
-            type: 'task' as const,
-            project_id: t.project_id,
-            title: t.title,
-            ts: t.updated_at,
-            task_id: t.id,
-          }))
-        )
-
-        // todos created since last visit
-        const { data: todosData, error: todosErr } = await supabase
-          .from('project_todos')
-          .select('id, project_id, text, created_at, completed_at, is_done')
-          .in('project_id', projectIds)
-          .gt('created_at', since)
-          .order('created_at', { ascending: false })
-          .limit(20)
-
-        if (todosErr) console.error('Load whats-new todos error:', todosErr)
-
-        const todos = (todosData || []) as ProjectTodo[]
-        newItems = newItems.concat(
-          todos.map((t) => ({
-            type: 'todo' as const,
-            project_id: t.project_id,
-            text: t.text,
-            ts: t.created_at,
-            todo_id: t.id,
-          }))
-        )
+          .limit(5)
+        setRecentDocs((docData ?? []) as RecentDoc[])
       }
 
-      // newest-first
-      newItems.sort((a, b) => (a.ts < b.ts ? 1 : -1))
-      setWhatsNew(newItems.slice(0, 25))
+      // Invoices
+      const { data: invData } = await supabase
+        .from('invoices')
+        .select('id, status, amount_cents, currency, due_date')
+        .eq('client_id', userId)
+        .eq('is_published', true)
+        .order('created_at', { ascending: false })
+        .limit(20)
+      setInvoices((invData ?? []) as Invoice[])
 
-      // 5) update last_seen_at AFTER fetching
-      const nowIso = new Date().toISOString()
-      const { error: seenErr } = await supabase.from('profiles').update({ last_seen_at: nowIso }).eq('id', userId)
-      if (seenErr) console.error('Update last_seen_at error:', seenErr)
+      // Update last_seen_at
+      await supabase.from('profiles').update({ last_seen_at: new Date().toISOString() }).eq('id', userId)
 
       setLoading(false)
     }
-
     load()
   }, [])
 
-  const projectsById = useMemo(() => {
-    const map = new Map<string, ProjectRow>()
-    for (const p of projects) map.set(p.id, p)
-    return map
-  }, [projects])
+  const activeProject = useMemo(() => projects[0] ?? null, [projects])
 
-  const getWhatsNewKey = (item: WhatsNewItem) => {
-    switch (item.type) {
-      case 'doc':
-        return `doc-${item.doc_id}`
-      case 'task':
-        return `task-${item.task_id}`
-      case 'todo':
-        return `todo-${item.todo_id}`
+  const projectProgress = useMemo(() => {
+    if (!activeProject) return { total: 0, done: 0, percent: 0, currentStep: null, steps: [] }
+    const steps = [...(activeProject.project_steps ?? [])].sort((a, b) => a.step_order - b.step_order)
+    let total = 0, done = 0
+    for (const s of steps) {
+      for (const t of s.project_step_tasks ?? []) {
+        total++
+        if (t.is_done) done++
+      }
     }
-  }
+    const percent = total === 0 ? 0 : Math.round((done / total) * 100)
+    const currentStep = steps.find((s) => (s.project_step_tasks ?? []).some((t) => !t.is_done)) ?? steps[steps.length - 1] ?? null
+    return { total, done, percent, currentStep, steps }
+  }, [activeProject])
 
-  const getWhatsNewLabel = (item: WhatsNewItem) => {
-    switch (item.type) {
-      case 'doc':
-        return `New document: ${item.title}`
-      case 'task':
-        return `Task updated: ${item.title}`
-      case 'todo':
-        return `New note: ${item.text}`
-    }
-  }
+  const outstandingInvoices = useMemo(() =>
+    invoices.filter((i) => {
+      const s = (i.status ?? '').toLowerCase()
+      return s !== 'paid' && s !== 'void' && s !== 'uncollectible'
+    }), [invoices])
 
-  if (loading) return <p className="p-8">Loading…</p>
+  const outstandingTotal = useMemo(() => {
+    const sum = outstandingInvoices.reduce((acc, i) => acc + (i.amount_cents ?? 0), 0)
+    const currency = invoices.find((i) => i.currency)?.currency ?? 'CAD'
+    return formatMoney(sum, currency)
+  }, [outstandingInvoices, invoices])
+
+  if (loading) return <div className="p-8 text-sm text-neutral-400">Loading your portal…</div>
 
   return (
-    <div className="p-8 space-y-6 max-w-[1200px] mx-auto">
-      <div>
-        <p className="text-sm text-gray-500">Dashboard</p>
-        <h1 className="text-3xl font-bold">Welcome back</h1>
+    <div className="min-h-screen bg-neutral-50 pb-24">
+
+      {/* ── Header ── */}
+      <div
+        className="px-6 pt-10 pb-8"
+        style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 60%)' }}
+      >
+        <div className="max-w-2xl mx-auto">
+          <p className="text-xs font-mono uppercase tracking-widest mb-2" style={{ color: '#7EC8A0' }}>
+            Unless Creative — Client Portal
+          </p>
+          <h1 className="text-3xl text-white">
+            {profile?.name ? `Welcome back, ${profile.name.split(' ')[0]}.` : 'Welcome back.'}
+          </h1>
+          {activeProject && (
+            <p className="text-sm mt-1" style={{ color: '#888' }}>
+              {typeLabel(activeProject.project_type) ?? 'Your project'} is in progress.
+            </p>
+          )}
+        </div>
       </div>
 
-      {errorMsg ? <div className="text-sm text-red-600">{errorMsg}</div> : null}
+      <div className="max-w-2xl mx-auto px-6 pt-6 space-y-4">
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* WHAT'S NEW */}
-        <div className="border rounded-2xl p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h2 className="font-semibold">What’s New</h2>
-            <div className="text-xs text-gray-500">Since your last visit</div>
+        {errorMsg && <p className="text-sm text-red-500">{errorMsg}</p>}
+
+        {/* ── Active Project: Phase Progress ── */}
+        {activeProject ? (
+          <button
+            onClick={() => router.push(`/dashboard/client/projects/${activeProject.id}`)}
+            className="w-full text-left bg-white border border-neutral-200 rounded-2xl p-6 hover:border-neutral-400 hover:shadow-sm transition-all group"
+          >
+            {/* Project name + type */}
+            <div className="flex items-start justify-between gap-4 mb-5">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest mb-1" style={{ color: '#7EC8A0' }}>
+                  Active Project
+                </p>
+                <h2 className="text-xl font-bold text-neutral-900 group-hover:text-black leading-snug">
+                  {activeProject.name}
+                </h2>
+                {activeProject.project_type && (
+                  <p className="text-xs text-neutral-500 mt-0.5">{typeLabel(activeProject.project_type)}</p>
+                )}
+              </div>
+              <span className="text-neutral-300 text-lg mt-1 group-hover:text-neutral-500 transition">→</span>
+            </div>
+
+            {/* Phase stepper */}
+            {projectProgress.steps.length > 0 && (
+              <div className="mb-5">
+                <div className="flex items-center gap-0">
+                  {projectProgress.steps.map((step, i) => {
+                    const tasks = step.project_step_tasks ?? []
+                    const allDone = tasks.length > 0 && tasks.every((t) => t.is_done)
+                    const isActive = step.id === projectProgress.currentStep?.id
+                    const isLast = i === projectProgress.steps.length - 1
+
+                    return (
+                      <div key={step.id} className="flex items-center" style={{ flex: isLast ? '0 0 auto' : 1 }}>
+                        {/* Dot */}
+                        <div
+                          className="w-3 h-3 rounded-full shrink-0 transition-all"
+                          style={{
+                            background: allDone ? '#1A3428' : isActive ? '#F04D3D' : '#e5e5e5',
+                            outline: isActive ? '3px solid #F04D3D30' : 'none',
+                          }}
+                        />
+                        {/* Connector */}
+                        {!isLast && (
+                          <div
+                            className="h-0.5 flex-1"
+                            style={{ background: allDone ? '#1A3428' : '#e5e5e5' }}
+                          />
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="flex justify-between mt-2">
+                  <p className="text-xs text-neutral-500">
+                    <span className="font-semibold text-neutral-800">{projectProgress.currentStep?.title}</span>
+                    {' '}— Phase {(projectProgress.steps.findIndex(s => s.id === projectProgress.currentStep?.id) + 1)} of {projectProgress.steps.length}
+                  </p>
+                  <p className="text-xs font-semibold" style={{ color: '#F04D3D' }}>
+                    {projectProgress.percent}%
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Progress bar */}
+            <div className="w-full bg-neutral-100 rounded-full h-1.5">
+              <div
+                className="h-1.5 rounded-full transition-all"
+                style={{ width: `${projectProgress.percent}%`, background: '#F04D3D' }}
+              />
+            </div>
+            <p className="text-xs text-neutral-400 mt-2">
+              {projectProgress.done} of {projectProgress.total} tasks complete — tap to view full project
+            </p>
+          </button>
+        ) : (
+          <div className="bg-white border border-dashed border-neutral-300 rounded-2xl p-8 text-center">
+            <p className="text-neutral-400 text-sm">No active project yet. Riley will set one up for you.</p>
           </div>
+        )}
 
-          {whatsNew.length === 0 ? (
-            <div className="text-sm text-gray-500">Nothing new yet ✨</div>
-          ) : (
+        {/* ── Recent Uploads ── */}
+        {recentDocs.length > 0 && (
+          <div className="bg-white border border-neutral-200 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="font-semibold text-neutral-900">Recent Uploads</h3>
+                <p className="text-xs text-neutral-400 mt-0.5">Files ready for your review</p>
+              </div>
+              <button
+                onClick={() => router.push('/dashboard/client/documents')}
+                className="text-xs font-semibold transition"
+                style={{ color: '#F04D3D' }}
+              >
+                View all →
+              </button>
+            </div>
             <div className="space-y-2">
-              {whatsNew.map((item) => {
-                const proj = projectsById.get(item.project_id)
+              {recentDocs.map((doc) => {
+                const isLink = !!doc.embed_url
+                const ext = doc.file_type?.split('/').pop()?.toUpperCase() ?? (isLink ? 'LINK' : 'FILE')
                 return (
                   <button
-                    key={getWhatsNewKey(item)}
-                    type="button"
-                    onClick={() => router.push(`/dashboard/client/projects/${item.project_id}`)}
-                    className="w-full text-left border rounded-xl p-3 hover:border-black transition"
+                    key={doc.id}
+                    onClick={() => router.push('/dashboard/client/documents')}
+                    className="w-full text-left flex items-center gap-3 px-4 py-3 rounded-xl border border-neutral-100 hover:border-neutral-300 transition group"
                   >
-                    <div className="text-xs text-gray-500">
-                      {proj?.name ?? 'Project'} • {new Date(item.ts).toLocaleString()}
+                    <div
+                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-[10px] font-bold"
+                      style={{ background: '#F04D3D10', color: '#F04D3D' }}
+                    >
+                      {isLink ? '↗' : '◆'}
                     </div>
-                    <div className="text-sm font-medium pt-1">{getWhatsNewLabel(item)}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-neutral-800 truncate">{doc.title}</p>
+                      <p className="text-xs text-neutral-400 mt-0.5">
+                        {ext} · {formatDate(doc.created_at)}
+                      </p>
+                    </div>
+                    <span className="text-neutral-300 text-sm group-hover:text-neutral-500 transition">→</span>
                   </button>
                 )
               })}
             </div>
-          )}
-        </div>
+          </div>
+        )}
 
-        {/* PROJECTS */}
-        <div className="border rounded-2xl p-5 space-y-3">
-          <h2 className="font-semibold">Your Projects</h2>
+        {/* ── Invoices Snapshot ── */}
+        <button
+          onClick={() => router.push('/dashboard/client/invoices')}
+          className="w-full text-left bg-white border border-neutral-200 rounded-2xl p-5 hover:border-neutral-400 hover:shadow-sm transition-all group"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-1">Billing</p>
+              {outstandingInvoices.length > 0 ? (
+                <>
+                  <p className="text-2xl font-bold" style={{ color: '#F04D3D' }}>{outstandingTotal}</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">
+                    {outstandingInvoices.length} outstanding invoice{outstandingInvoices.length !== 1 ? 's' : ''}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-lg font-semibold text-neutral-800">All paid up ✓</p>
+                  <p className="text-xs text-neutral-500 mt-0.5">{invoices.length} invoice{invoices.length !== 1 ? 's' : ''} on file</p>
+                </>
+              )}
+            </div>
+            <span className="text-neutral-300 text-lg group-hover:text-neutral-500 transition">→</span>
+          </div>
+        </button>
 
-          {projects.length === 0 ? (
-            <div className="text-sm text-gray-500">You don’t have any projects yet.</div>
-          ) : (
+        {/* ── All Projects (if multiple) ── */}
+        {projects.length > 1 && (
+          <div className="bg-white border border-neutral-200 rounded-2xl p-5">
+            <h3 className="font-semibold text-neutral-900 mb-3">All Projects</h3>
             <div className="space-y-2">
               {projects.map((p) => (
                 <button
                   key={p.id}
-                  type="button"
                   onClick={() => router.push(`/dashboard/client/projects/${p.id}`)}
-                  className="w-full text-left border rounded-xl p-4 hover:border-black transition"
+                  className="w-full text-left flex items-center justify-between px-4 py-3 rounded-xl border border-neutral-100 hover:border-neutral-300 transition group"
                 >
-                  <div className="text-lg font-semibold">{p.name}</div>
-                  <div className="text-xs text-gray-500 pt-1">
-                    Created {new Date(p.created_at).toLocaleDateString()}
+                  <div>
+                    <p className="text-sm font-semibold text-neutral-800">{p.name}</p>
+                    {p.project_type && <p className="text-xs text-neutral-400 mt-0.5">{typeLabel(p.project_type)}</p>}
                   </div>
+                  <span className="text-neutral-300 text-sm group-hover:text-neutral-500 transition">→</span>
                 </button>
               ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
+
       </div>
     </div>
   )

@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabase'
 import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 
+// ─── Types ────────────────────────────────────────────────────────────────────
 type Task = {
   id: string
   project_id: string
@@ -11,658 +12,668 @@ type Task = {
   title: string
   is_done: boolean
   due_date: string | null
-  created_at: string
   updated_at: string
 }
 
-type StepRaw = {
+type Step = {
   id: string
   title: string
   step_order: number
-  project_step_tasks: Task[] | null
-}
-
-type StepUI = Omit<StepRaw, 'project_step_tasks'> & { project_step_tasks: Task[] }
-
-type Todo = {
-  id: string
-  project_id: string
-  text: string
-  is_done: boolean
-  completed_at: string | null
-  created_at: string
+  project_step_tasks: Task[]
 }
 
 type ProjectDoc = {
   id: string
-  project_id: string
   title: string
   storage_path: string | null
   embed_url: string | null
   file_type: string | null
-  size_bytes: number | null
   created_at: string
-  updated_at: string
 }
 
-function formatDateShort(dateStr: string) {
+type MeetingNote = {
+  id: string
+  title: string
+  meeting_date: string | null
+  content: any
+  status: string
+  created_at: string
+}
+
+type Project = {
+  id: string
+  name: string
+  project_type: string | null
+  brief_content: string | null
+  project_steps: Step[]
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+function formatDate(ts: string | null) {
+  if (!ts) return '—'
   try {
-    const d = new Date(`${dateStr}T00:00:00`)
-    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-  } catch {
-    return dateStr
-  }
+    return new Date(ts).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })
+  } catch { return ts }
 }
 
-function formatDateTimeShort(ts: string) {
+function typeLabel(type: string | null) {
+  if (!type) return null
+  if (type === 'brand-alignment-intensive' || type === 'BAI') return 'BAI'
+  if (type === 'brand-system-build' || type === 'BSB') return 'BSB'
+  if (type === 'brand-stewardship-retainer' || type === 'BSR') return 'BSR'
+  return type
+}
+
+function typeLabelFull(type: string | null) {
+  if (!type) return null
+  if (type === 'brand-alignment-intensive' || type === 'BAI') return 'Brand Alignment Intensive'
+  if (type === 'brand-system-build' || type === 'BSB') return 'Brand System Build'
+  if (type === 'brand-stewardship-retainer' || type === 'BSR') return 'Brand Stewardship Retainer'
+  return type
+}
+
+function normalizeEmbedUrl(url: string) {
   try {
-    const d = new Date(ts)
-    return d.toLocaleString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    })
-  } catch {
-    return ts
-  }
+    const u = new URL(url)
+    if (u.hostname.includes('docs.google.com')) {
+      u.pathname = u.pathname.replace(/\/(edit|view|copy).*$/, '/preview')
+      return u.toString()
+    }
+    if (u.hostname.includes('drive.google.com')) {
+      u.pathname = u.pathname.replace(/\/view.*$/, '/preview')
+      return u.toString()
+    }
+    if (u.hostname.includes('figma.com')) {
+      if (u.pathname.startsWith('/embed')) return u.toString()
+      return `https://www.figma.com/embed?embed_host=share&url=${encodeURIComponent(url)}`
+    }
+    return url
+  } catch { return url }
 }
 
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ClientProjectPage() {
-  const params = useParams()
+  const { id: projectId } = useParams<{ id: string }>()
   const router = useRouter()
-  const projectId = params.id as string
 
-  const [project, setProject] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
-
-  const [todos, setTodos] = useState<Todo[]>([])
+  const [project, setProject] = useState<Project | null>(null)
   const [docs, setDocs] = useState<ProjectDoc[]>([])
+  const [meetingNotes, setMeetingNotes] = useState<MeetingNote[]>([])
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<'overview' | 'docs' | 'notes'>('overview')
 
-  // docs preview
-  const [previewOpen, setPreviewOpen] = useState(false)
+  // Task toggle state
+  const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null)
+  const [noteOpen, setNoteOpen] = useState(false)
+  const [noteText, setNoteText] = useState('')
+  const [pendingTask, setPendingTask] = useState<{ stepId: string; taskId: string } | null>(null)
+  const [savingNote, setSavingNote] = useState(false)
+
+  // Doc preview
   const [previewDoc, setPreviewDoc] = useState<ProjectDoc | null>(null)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
-  const [previewError, setPreviewError] = useState<string | null>(null)
   const [docThumbs, setDocThumbs] = useState<Record<string, string>>({})
 
-  // task completion note modal
-  const [noteOpen, setNoteOpen] = useState(false)
-  const [noteText, setNoteText] = useState('')
-  const [pendingTask, setPendingTask] = useState<{ stepId: string; taskId: string; nextDone: boolean } | null>(null)
-  const [savingNote, setSavingNote] = useState(false)
-  const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null)
-
-  const [showBrief, setShowBrief] = useState(false)
-
-  const steps: StepUI[] = ((project?.project_steps ?? []) as StepRaw[]).map((s) => ({
-    ...s,
-    project_step_tasks: s.project_step_tasks ?? [],
-  }))
-
-  const stepsSorted = useMemo(
-    () => [...steps].sort((a, b) => a.step_order - b.step_order),
-    [steps]
-  )
-
-  const allTasks = useMemo(() => {
-    const arr: Task[] = []
-    for (const s of stepsSorted) for (const t of s.project_step_tasks || []) arr.push(t)
-    return arr
-  }, [stepsSorted])
-
-  const totalTasks = allTasks.length
-  const doneTasks = allTasks.filter((t) => t.is_done).length
-  const percent = totalTasks === 0 ? 0 : Math.round((doneTasks / totalTasks) * 100)
-
-  const currentStep = useMemo(() => {
-    if (stepsSorted.length === 0) return null
-    const firstIncomplete = stepsSorted.find((s) => (s.project_step_tasks || []).some((t) => !t.is_done))
-    return firstIncomplete ?? stepsSorted[stepsSorted.length - 1]
-  }, [stepsSorted])
-
-  const currentStepTasks = currentStep?.project_step_tasks ?? []
-  const currentStepDone = currentStepTasks.filter((t) => t.is_done).length
-  const currentStepTotal = currentStepTasks.length
-
-  const normalizeEmbedUrl = (url: string) => {
-    try {
-      const u = new URL(url)
-
-      if (u.hostname.includes('docs.google.com')) {
-        u.pathname = u.pathname.replace(/\/(edit|view|copy).*$/, '/preview')
-        return u.toString()
-      }
-
-      if (u.hostname.includes('drive.google.com')) {
-        u.pathname = u.pathname.replace(/\/view.*$/, '/preview')
-        return u.toString()
-      }
-
-      if (u.hostname.includes('figma.com')) {
-        if (u.pathname.startsWith('/embed')) return u.toString()
-        return `https://www.figma.com/embed?embed_host=share&url=${encodeURIComponent(url)}`
-      }
-
-      return url
-    } catch {
-      return url
-    }
-  }
-
-  const isProbablyImage = (doc: ProjectDoc) => (doc.file_type || '').toLowerCase().startsWith('image/')
-  const isProbablyPdf = (doc: ProjectDoc) => {
-    const t = (doc.file_type || '').toLowerCase()
-    return t.includes('pdf') || t.includes('.pdf')
-  }
-
-  const closePreview = () => {
-    setPreviewOpen(false)
-    setPreviewDoc(null)
-    setPreviewUrl(null)
-    setPreviewError(null)
-    setPreviewLoading(false)
-  }
-
-  const openPreview = async (doc: ProjectDoc) => {
-    setPreviewOpen(true)
-    setPreviewDoc(doc)
-    setPreviewUrl(null)
-    setPreviewError(null)
-    setPreviewLoading(true)
-
-    try {
-      if (doc.embed_url) {
-        setPreviewUrl(normalizeEmbedUrl(doc.embed_url))
-        return
-      }
-
-      if (!doc.storage_path) {
-        setPreviewError('No preview available')
-        return
-      }
-
-      const { data, error } = await supabase.storage
-        .from('project-files')
-        .createSignedUrl(doc.storage_path, 60 * 10)
-
-      if (error || !data?.signedUrl) {
-        setPreviewError('Could not load preview')
-        return
-      }
-
-      setPreviewUrl(data.signedUrl)
-    } finally {
-      setPreviewLoading(false)
-    }
-  }
-
+  // ─── Load ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const loadData = async () => {
-      setLoading(true)
-
-      const { data: projectData, error } = await supabase
+    const load = async () => {
+      const { data: projData } = await supabase
         .from('projects')
-        .select(
-          `
-          id,
-          name,
-          brief_content,
-          client_id,
+        .select(`
+          id, name, project_type, brief_content,
           project_steps (
-            id,
-            title,
-            step_order,
-            project_step_tasks (
-              id,
-              project_id,
-              project_step_id,
-              title,
-              is_done,
-              due_date,
-              created_at,
-              updated_at
-            )
+            id, title, step_order,
+            project_step_tasks ( id, project_id, project_step_id, title, is_done, due_date, updated_at )
           )
-        `
-        )
+        `)
         .eq('id', projectId)
         .single()
 
-      if (error || !projectData) {
-        console.error('Load project error:', error)
-        setProject(null)
-        setLoading(false)
-        return
+      if (projData) {
+        const steps = ((projData.project_steps ?? []) as any[]).map((s: any) => ({
+          ...s,
+          project_step_tasks: (s.project_step_tasks ?? []) as Task[],
+        })) as Step[]
+        setProject({ ...projData as any, project_steps: steps })
       }
-
-      setProject({
-        ...projectData,
-        project_steps: (projectData.project_steps || []) as StepRaw[],
-      })
-
-      const { data: todosData } = await supabase
-        .from('project_todos')
-        .select('id, project_id, text, is_done, completed_at, created_at')
-        .eq('project_id', projectId)
-        .order('created_at')
-
-      setTodos((todosData || []) as Todo[])
 
       const { data: docsData } = await supabase
         .from('project_documents')
-        .select('id, project_id, title, storage_path, embed_url, file_type, size_bytes, created_at, updated_at')
+        .select('id, title, storage_path, embed_url, file_type, created_at')
         .eq('project_id', projectId)
-        .order('created_at')
+        .order('created_at', { ascending: false })
+      setDocs((docsData ?? []) as ProjectDoc[])
 
-      setDocs((docsData || []) as ProjectDoc[])
+      const { data: notesData } = await supabase
+        .from('meeting_notes')
+        .select('id, title, meeting_date, content, status, created_at')
+        .eq('project_id', projectId)
+        .eq('status', 'published')
+        .order('meeting_date', { ascending: false })
+      setMeetingNotes((notesData ?? []) as MeetingNote[])
+
       setLoading(false)
     }
-
-    loadData()
+    load()
   }, [projectId])
 
-  // thumbs for uploads
+  // Signed URLs for uploaded docs
   useEffect(() => {
     const loadThumbs = async () => {
-      const targets = docs.filter((d) => d.storage_path)
-      const missing = targets.filter((d) => !docThumbs[d.id])
-      if (missing.length === 0) return
-
+      const missing = docs.filter((d) => d.storage_path && !docThumbs[d.id])
+      if (!missing.length) return
       const next: Record<string, string> = {}
       for (const d of missing) {
-        const { data, error } = await supabase.storage
+        const { data } = await supabase.storage
           .from('project-files')
           .createSignedUrl(d.storage_path!, 60 * 10)
-
-        if (!error && data?.signedUrl) next[d.id] = data.signedUrl
+        if (data?.signedUrl) next[d.id] = data.signedUrl
       }
-      if (Object.keys(next).length > 0) setDocThumbs((prev) => ({ ...prev, ...next }))
+      if (Object.keys(next).length) setDocThumbs((prev) => ({ ...prev, ...next }))
     }
-
     loadThumbs()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docs])
 
-  if (loading) return <p className="p-8">Loading…</p>
-  if (!project) return <p className="p-8">Project not found</p>
+  // ─── Derived ──────────────────────────────────────────────────────────────
+  const stepsSorted = useMemo(() => {
+    if (!project) return []
+    return [...project.project_steps].sort((a, b) => a.step_order - b.step_order)
+  }, [project])
 
-  const toggleTodo = async (todoId: string) => {
-    let next = false
+  const { total, done, percent, currentStep } = useMemo(() => {
+    let total = 0, done = 0
+    for (const s of stepsSorted) {
+      for (const t of s.project_step_tasks) { total++; if (t.is_done) done++ }
+    }
+    const percent = total === 0 ? 0 : Math.round((done / total) * 100)
+    const currentStep = stepsSorted.find((s) => s.project_step_tasks.some((t) => !t.is_done)) ?? stepsSorted[stepsSorted.length - 1] ?? null
+    return { total, done, percent, currentStep }
+  }, [stepsSorted])
 
-    setTodos((prev) =>
-      prev.map((t) => {
-        if (t.id !== todoId) return t
-        next = !t.is_done
-        return { ...t, is_done: next, completed_at: next ? new Date().toISOString() : null }
-      })
-    )
+  const currentStepTasks = currentStep?.project_step_tasks ?? []
 
-    const { error } = await supabase
-      .from('project_todos')
-      .update({ is_done: next, completed_at: next ? new Date().toISOString() : null })
-      .eq('id', todoId)
-
-    if (error) console.error('Toggle todo error:', error)
-  }
-
+  // ─── Task toggle ───────────────────────────────────────────────────────────
   const requestTaskToggle = (stepId: string, taskId: string, nextDone: boolean) => {
-    // if they’re completing it -> prompt for optional note
     if (nextDone) {
-      setPendingTask({ stepId, taskId, nextDone })
+      setPendingTask({ stepId, taskId })
       setNoteText('')
       setNoteOpen(true)
       return
     }
-
-    // unchecking: just toggle immediately
-    void commitTaskToggle(stepId, taskId, nextDone, null)
+    commitTaskToggle(stepId, taskId, false, null)
   }
 
   const commitTaskToggle = async (stepId: string, taskId: string, nextDone: boolean, note: string | null) => {
-    // optimistic
-    setProject((prev: any) => ({
-      ...prev,
-      project_steps: (prev.project_steps || []).map((s: StepRaw) => {
-        if (s.id !== stepId) return s
-        return {
-          ...s,
-          project_step_tasks: (s.project_step_tasks || []).map((t: Task) =>
-            t.id === taskId ? { ...t, is_done: nextDone } : t
-          ),
-        }
-      }),
-    }))
-
+    setProject((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        project_steps: prev.project_steps.map((s) =>
+          s.id !== stepId ? s : {
+            ...s,
+            project_step_tasks: s.project_step_tasks.map((t) =>
+              t.id !== taskId ? t : { ...t, is_done: nextDone }
+            ),
+          }
+        ),
+      }
+    })
     setUpdatingTaskId(taskId)
-
-    const { error: taskErr } = await supabase
-      .from('project_step_tasks')
-      .update({ is_done: nextDone })
-      .eq('id', taskId)
-
-    if (taskErr) {
-      console.error('Toggle task error:', taskErr)
-      setUpdatingTaskId(null)
-      return
-    }
-
-    if (note && note.trim().length > 0) {
-      const { error: noteErr } = await supabase.from('project_task_notes').insert({
-        project_id: projectId,
-        task_id: taskId,
-        note: note.trim(),
-        created_by: 'client',
+    await supabase.from('project_step_tasks').update({ is_done: nextDone }).eq('id', taskId)
+    if (note?.trim()) {
+      await supabase.from('project_task_notes').insert({
+        project_id: projectId, task_id: taskId, note: note.trim(), created_by: 'client',
       })
-      if (noteErr) console.error('Insert task note error:', noteErr)
     }
-
     setUpdatingTaskId(null)
   }
 
-  const submitNoteAndComplete = async (skip: boolean) => {
+  const submitNote = async (skip: boolean) => {
     if (!pendingTask) return
     setSavingNote(true)
-    await commitTaskToggle(pendingTask.stepId, pendingTask.taskId, pendingTask.nextDone, skip ? null : noteText)
+    await commitTaskToggle(pendingTask.stepId, pendingTask.taskId, true, skip ? null : noteText)
     setSavingNote(false)
     setNoteOpen(false)
     setPendingTask(null)
     setNoteText('')
   }
 
+  // ─── Doc preview ──────────────────────────────────────────────────────────
+  const openPreview = async (doc: ProjectDoc) => {
+    setPreviewDoc(doc)
+    setPreviewLoading(true)
+    setPreviewUrl(null)
+    if (doc.embed_url) {
+      setPreviewUrl(normalizeEmbedUrl(doc.embed_url))
+    } else if (doc.storage_path) {
+      const { data } = await supabase.storage.from('project-files').createSignedUrl(doc.storage_path, 600)
+      setPreviewUrl(data?.signedUrl ?? null)
+    }
+    setPreviewLoading(false)
+  }
+
+  const isImage = (d: ProjectDoc) => (d.file_type ?? '').toLowerCase().startsWith('image/')
+  const isPdf = (d: ProjectDoc) => (d.file_type ?? '').toLowerCase().includes('pdf')
+
+  // ─── Render ────────────────────────────────────────────────────────────────
+  if (loading) return <div className="p-8 text-sm text-neutral-400">Loading…</div>
+  if (!project) return <div className="p-8 text-sm text-red-400">Project not found.</div>
+
+  const tabs = [
+    { id: 'overview' as const, label: 'Overview' },
+    { id: 'docs' as const, label: `Documents${docs.length ? ` (${docs.length})` : ''}` },
+    { id: 'notes' as const, label: `Meeting Notes${meetingNotes.length ? ` (${meetingNotes.length})` : ''}` },
+  ]
+
   return (
-    <div className="p-8 space-y-6 max-w-[1400px] mx-auto">
-      {/* Header */}
-      <div className="flex justify-between items-start gap-4">
-        <div>
-          <p className="text-sm text-gray-500">Project</p>
-          <h1 className="text-3xl font-bold">{project.name}</h1>
-        </div>
+    <div className="min-h-screen bg-neutral-50 pb-28">
 
-        <button
-          onClick={() => router.push('/dashboard/client')}
-          className="text-sm underline text-neutral-600 hover:text-black"
-        >
-          Back
-        </button>
-      </div>
-
-      {/* Current Phase Tasks (replaces brief at top) */}
-      <div className="border rounded-2xl p-5 space-y-3">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 className="font-semibold text-lg">
-              {currentStep ? `Current Phase: ${currentStep.title}` : 'Current Phase'}
-            </h3>
-            <p className="text-sm text-gray-500">
-              {currentStep ? `${currentStepDone}/${currentStepTotal} complete` : 'No phases yet'}
-            </p>
-          </div>
-
+      {/* ── Header ── */}
+      <div className="px-6 pt-8 pb-6" style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 55%)' }}>
+        <div className="max-w-2xl mx-auto">
           <button
-            onClick={() => setShowBrief((v) => !v)}
-            className="text-sm underline text-neutral-600 hover:text-black"
-            title="Toggle brief"
+            onClick={() => router.push('/dashboard/client')}
+            className="text-xs mb-4 flex items-center gap-1 transition"
+            style={{ color: '#7EC8A0' }}
           >
-            {showBrief ? 'Hide brief' : 'Show brief'}
+            ← Dashboard
           </button>
-        </div>
-
-        {currentStepTasks.length === 0 ? (
-          <p className="text-sm text-gray-400">No tasks in this phase yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {currentStepTasks.map((t) => {
-              const busy = updatingTaskId === t.id
-              return (
-                <label key={t.id} className={`flex items-start gap-3 border rounded-xl p-3 ${busy ? 'opacity-70' : ''}`}>
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={t.is_done}
-                    disabled={busy}
-                    onChange={() => requestTaskToggle(currentStep!.id, t.id, !t.is_done)}
-                  />
-                  <div className="flex-1">
-                    <div className={t.is_done ? 'line-through text-gray-400' : 'text-gray-800'}>
-                      {t.title}
-                    </div>
-                    <div className="text-xs text-gray-500 pt-1">
-                      {t.due_date ? `Due ${formatDateShort(t.due_date)}` : 'No due date'}
-                    </div>
-                  </div>
-                </label>
-              )
-            })}
-          </div>
-        )}
-
-        {/* Brief lives here now (toggle) */}
-        {showBrief ? (
-          <div className="mt-3 border-t pt-3">
-            <div className="text-sm font-medium">Project Brief</div>
-            <div className="pt-2 whitespace-pre-wrap text-sm text-gray-800">
-              {project.brief_content ?? ''}
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              {project.project_type && (
+                <span
+                  className="inline-block text-xs font-semibold px-2 py-0.5 rounded-full mb-2"
+                  style={{ background: '#F04D3D20', color: '#F04D3D' }}
+                >
+                  {typeLabelFull(project.project_type)}
+                </span>
+              )}
+              <h1 className="text-2xl text-white leading-tight">{project.name}</h1>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="text-2xl font-bold" style={{ color: '#F04D3D' }}>{percent}%</p>
+              <p className="text-xs" style={{ color: '#666' }}>{done}/{total} tasks</p>
             </div>
           </div>
-        ) : null}
-      </div>
 
-      {/* Progress */}
-      <div className="border rounded-2xl p-5 space-y-3">
-        <div className="flex justify-between text-sm">
-          <span className="font-medium">Overall Progress</span>
-          <span>{percent}%</span>
-        </div>
-
-        <div className="w-full bg-gray-200 rounded-full h-3">
-          <div className="bg-black h-3 rounded-full transition-all" style={{ width: `${percent}%` }} />
-        </div>
-
-        <div className="text-sm text-gray-600">
-          {currentStep ? (
-            <>
-              <span className="font-medium">Current phase:</span> {currentStep.title}
-            </>
-          ) : (
-            'No phases yet.'
+          {/* Phase stepper */}
+          {stepsSorted.length > 0 && (
+            <div className="mt-5">
+              <div className="flex items-center">
+                {stepsSorted.map((step, i) => {
+                  const tasks = step.project_step_tasks
+                  const allDone = tasks.length > 0 && tasks.every((t) => t.is_done)
+                  const isActive = step.id === currentStep?.id
+                  const isLast = i === stepsSorted.length - 1
+                  return (
+                    <div key={step.id} className="flex items-center" style={{ flex: isLast ? '0 0 auto' : 1 }}>
+                      <div
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{
+                          background: allDone ? '#7EC8A0' : isActive ? '#F04D3D' : '#333',
+                          outline: isActive ? '3px solid #F04D3D40' : 'none',
+                        }}
+                      />
+                      {!isLast && (
+                        <div className="h-px flex-1" style={{ background: allDone ? '#7EC8A0' : '#333' }} />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              <p className="text-xs mt-2" style={{ color: '#7EC8A0' }}>
+                Phase {stepsSorted.findIndex((s) => s.id === currentStep?.id) + 1} of {stepsSorted.length}
+                {currentStep && <span className="text-neutral-500"> — {currentStep.title}</span>}
+              </p>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Client Todos */}
-      <div className="border rounded-2xl p-5 space-y-3">
-        <h3 className="font-semibold">Your Notes</h3>
+      {/* ── Tabs ── */}
+      <div className="bg-black border-b border-neutral-800 px-6">
+        <div className="max-w-2xl mx-auto flex">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className="px-4 py-3 text-xs font-semibold border-b-2 transition -mb-px"
+              style={{
+                borderColor: activeTab === tab.id ? '#F04D3D' : 'transparent',
+                color: activeTab === tab.id ? '#F04D3D' : '#666',
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-        {todos.length === 0 ? (
-          <p className="text-sm text-gray-400">No notes yet.</p>
-        ) : (
-          <div className="space-y-2">
-            {todos.map((t) => (
-              <label key={t.id} className="flex items-start gap-3 border rounded-xl p-3">
-                <input type="checkbox" checked={t.is_done} onChange={() => toggleTodo(t.id)} className="mt-1" />
-                <div className="flex-1">
-                  <div className={t.is_done ? 'line-through text-gray-400' : 'text-gray-800'}>{t.text}</div>
-                  <div className="text-xs text-gray-500 pt-1">
-                    {t.is_done && t.completed_at
-                      ? `Completed ${formatDateTimeShort(t.completed_at)}`
-                      : `Added ${formatDateTimeShort(t.created_at)}`}
-                  </div>
+      {/* ── Content ── */}
+      <div className="max-w-2xl mx-auto px-6 pt-6 space-y-4">
+
+        {/* ══ OVERVIEW ══ */}
+        {activeTab === 'overview' && (
+          <>
+            {/* Current phase tasks */}
+            <div className="bg-white border border-neutral-200 rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-0.5">Current Phase</p>
+                  <h3 className="font-bold text-neutral-900">{currentStep?.title ?? 'No active phase'}</h3>
                 </div>
-              </label>
-            ))}
+                {currentStepTasks.length > 0 && (
+                  <span className="text-xs text-neutral-500">
+                    {currentStepTasks.filter((t) => t.is_done).length}/{currentStepTasks.length}
+                  </span>
+                )}
+              </div>
+
+              {currentStepTasks.length === 0 ? (
+                <p className="text-sm text-neutral-400">No tasks in this phase yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {currentStepTasks.map((task) => {
+                    const busy = updatingTaskId === task.id
+                    return (
+                      <label
+                        key={task.id}
+                        className={`flex items-start gap-3 px-4 py-3 rounded-xl border transition cursor-pointer ${
+                          task.is_done ? 'border-neutral-100 bg-neutral-50' : 'border-neutral-200 hover:border-neutral-300'
+                        } ${busy ? 'opacity-60' : ''}`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={task.is_done}
+                          disabled={busy}
+                          onChange={() => requestTaskToggle(currentStep!.id, task.id, !task.is_done)}
+                          className="mt-0.5 shrink-0 accent-[#F04D3D]"
+                        />
+                        <div className="flex-1">
+                          <p className={`text-sm ${task.is_done ? 'line-through text-neutral-400' : 'text-neutral-800'}`}>
+                            {task.title}
+                          </p>
+                          {task.due_date && !task.is_done && (
+                            <p className="text-xs text-neutral-400 mt-0.5">Due {formatDate(task.due_date)}</p>
+                          )}
+                        </div>
+                        {task.is_done && (
+                          <span className="text-xs font-bold shrink-0" style={{ color: '#7EC8A0' }}>✓</span>
+                        )}
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* All phases */}
+            {stepsSorted.length > 1 && (
+              <div className="bg-white border border-neutral-200 rounded-2xl p-5">
+                <h3 className="font-bold text-neutral-900 mb-4">All Phases</h3>
+                <div className="space-y-3">
+                  {stepsSorted.map((step, i) => {
+                    const tasks = step.project_step_tasks
+                    const allDone = tasks.length > 0 && tasks.every((t) => t.is_done)
+                    const isActive = step.id === currentStep?.id
+                    const stepDone = tasks.filter((t) => t.is_done).length
+                    return (
+                      <div key={step.id} className="flex items-center gap-4">
+                        <div
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                          style={{
+                            background: allDone ? '#1A342820' : isActive ? '#F04D3D' : '#f5f5f5',
+                            color: allDone ? '#1A3428' : isActive ? '#fff' : '#bbb',
+                          }}
+                        >
+                          {allDone ? '✓' : String(i + 1).padStart(2, '0')}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-semibold ${isActive ? 'text-neutral-900' : allDone ? 'text-neutral-500' : 'text-neutral-400'}`}>
+                            {step.title}
+                          </p>
+                          {tasks.length > 0 && (
+                            <p className="text-xs text-neutral-400">{stepDone}/{tasks.length} tasks</p>
+                          )}
+                        </div>
+                        {isActive && (
+                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: '#F04D3D15', color: '#F04D3D' }}>
+                            Active
+                          </span>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Brief */}
+            {project.brief_content && (() => {
+              const raw = project.brief_content
+              // EditorJS object
+              if (typeof raw === 'object' && raw !== null && Array.isArray((raw as any).blocks)) {
+                const blocks = (raw as any).blocks as any[]
+                const text = blocks
+                  .filter((b) => b.type === 'paragraph' || b.type === 'header')
+                  .map((b) => String(b.data?.text ?? ''))
+                  .filter(Boolean)
+                  .join('\n\n')
+                if (!text) return null
+                return (
+                  <div className="bg-white border border-neutral-200 rounded-2xl p-5">
+                    <h3 className="font-bold text-neutral-900 mb-3">Project Brief</h3>
+                    <p className="text-sm text-neutral-600 leading-relaxed whitespace-pre-wrap">{text}</p>
+                  </div>
+                )
+              }
+              // Plain string
+              if (typeof raw === 'string' && raw.trim()) {
+                return (
+                  <div className="bg-white border border-neutral-200 rounded-2xl p-5">
+                    <h3 className="font-bold text-neutral-900 mb-3">Project Brief</h3>
+                    <p className="text-sm text-neutral-600 leading-relaxed whitespace-pre-wrap">{raw}</p>
+                  </div>
+                )
+              }
+              return null
+            })()}
+          </>
+        )}
+
+        {/* ══ DOCUMENTS ══ */}
+        {activeTab === 'docs' && (
+          <div className="bg-white border border-neutral-200 rounded-2xl p-5">
+            <h3 className="font-bold text-neutral-900 mb-4">Documents</h3>
+            {docs.length === 0 ? (
+              <p className="text-sm text-neutral-400">No documents yet — Riley will share files here as work progresses.</p>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {docs.map((doc) => {
+                  const thumbUrl = docThumbs[doc.id] ?? null
+                  const isLink = !!doc.embed_url
+
+                  return (
+                    <button
+                      key={doc.id}
+                      onClick={() => openPreview(doc)}
+                      className="text-left rounded-2xl border border-neutral-200 overflow-hidden hover:border-neutral-400 hover:shadow-sm transition group"
+                    >
+                      {/* Thumbnail */}
+                      <div className="h-24 bg-neutral-50 border-b border-neutral-100 relative overflow-hidden">
+                        {isLink && (
+                          <iframe
+                            src={normalizeEmbedUrl(doc.embed_url!)}
+                            className="absolute inset-0 w-full h-full"
+                            loading="lazy"
+                            style={{ pointerEvents: 'none' }}
+                            sandbox="allow-same-origin allow-scripts"
+                          />
+                        )}
+                        {!isLink && thumbUrl && isImage(doc) && (
+                          <img src={thumbUrl} alt={doc.title} className="absolute inset-0 w-full h-full object-cover" />
+                        )}
+                        {!isLink && thumbUrl && isPdf(doc) && (
+                          <iframe src={thumbUrl} className="absolute inset-0 w-full h-full" style={{ pointerEvents: 'none' }} />
+                        )}
+                        {!isLink && !thumbUrl && (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <span className="text-xs font-bold text-neutral-300 uppercase">{doc.file_type ?? 'File'}</span>
+                          </div>
+                        )}
+                        <span className="absolute top-2 left-2 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-white/90 text-neutral-500">
+                          {isLink ? 'LINK' : isPdf(doc) ? 'PDF' : isImage(doc) ? 'IMG' : 'FILE'}
+                        </span>
+                      </div>
+                      <div className="p-3">
+                        <p className="text-xs font-semibold text-neutral-800 line-clamp-2 group-hover:text-black">{doc.title}</p>
+                        <p className="text-xs text-neutral-400 mt-1">{formatDate(doc.created_at)}</p>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ MEETING NOTES ══ */}
+        {activeTab === 'notes' && (
+          <div className="space-y-3">
+            {meetingNotes.length === 0 ? (
+              <div className="bg-white border border-neutral-200 rounded-2xl p-8 text-center">
+                <p className="text-sm text-neutral-400">No meeting notes published yet.</p>
+              </div>
+            ) : (
+              meetingNotes.map((note) => (
+                <div key={note.id} className="bg-white border border-neutral-200 rounded-2xl p-5">
+                  <div className="flex items-start justify-between gap-4 mb-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-0.5">Meeting Notes</p>
+                      <h3 className="font-bold text-neutral-900">{note.title}</h3>
+                    </div>
+                    {note.meeting_date && (
+                      <p className="text-xs text-neutral-400 shrink-0">{formatDate(note.meeting_date)}</p>
+                    )}
+                  </div>
+                  {note.content && (() => {
+                    const blocks = typeof note.content === 'string'
+                      ? null
+                      : Array.isArray(note.content?.blocks)
+                        ? note.content.blocks
+                        : null
+                    if (typeof note.content === 'string') {
+                      return <p className="text-sm text-neutral-600 leading-relaxed whitespace-pre-wrap">{note.content}</p>
+                    }
+                    if (blocks) {
+                      return (
+                        <div className="text-sm text-neutral-600 leading-relaxed space-y-2">
+                          {blocks
+                            .filter((b: any) => b.type === 'paragraph' || b.type === 'header')
+                            .map((b: any, i: number) => (
+                              <p key={i} className={b.type === 'header' ? 'font-semibold text-neutral-800' : ''}>
+                                {String(b.data?.text ?? '')}
+                              </p>
+                            ))}
+                        </div>
+                      )
+                    }
+                    return null
+                  })()}
+                </div>
+              ))
+            )}
           </div>
         )}
       </div>
 
-      {/* Documents */}
-      <div className="border rounded-2xl p-5 space-y-3">
-        <h3 className="font-semibold">Documents</h3>
-
-        <div className="flex gap-3 overflow-x-auto pb-2 items-start">
-          {docs.length === 0 ? <div className="text-sm text-gray-400">No documents yet.</div> : null}
-
-          {docs.map((d) => {
-            const thumbUrl = d.storage_path ? docThumbs[d.id] : null
-            const isLink = !!d.embed_url
-            const linkThumb = d.embed_url ? normalizeEmbedUrl(d.embed_url) : null
-
-            return (
-              <button
-                key={d.id}
-                type="button"
-                onClick={() => openPreview(d)}
-                className="group shrink-0 w-52 rounded-2xl border hover:border-black transition overflow-hidden text-left relative"
-                title={d.title}
-              >
-                <div className="h-28 bg-gray-50 border-b relative">
-                  {isLink && linkThumb ? (
-                    <iframe
-                      src={linkThumb}
-                      className="absolute inset-0 w-full h-full"
-                      title="Link thumbnail"
-                      loading="lazy"
-                      referrerPolicy="no-referrer"
-                      sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
-                      style={{ pointerEvents: 'none' }}
-                    />
-                  ) : null}
-
-                  {!isLink && thumbUrl && isProbablyImage(d) ? (
-                    <img src={thumbUrl} alt={d.title} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
-                  ) : null}
-
-                  {!isLink && thumbUrl && isProbablyPdf(d) ? (
-                    <iframe
-                      src={thumbUrl}
-                      className="absolute inset-0 w-full h-full"
-                      title="PDF thumbnail"
-                      loading="lazy"
-                      style={{ pointerEvents: 'none' }}
-                    />
-                  ) : null}
-
-                  {(!isLink && !thumbUrl) ||
-                  (!isLink && thumbUrl && !(isProbablyImage(d) || isProbablyPdf(d))) ? (
-                    <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-500">
-                      <div className="px-2 py-1 rounded bg-white border">{(d.file_type ?? 'FILE').toUpperCase()}</div>
-                    </div>
-                  ) : null}
-
-                  <div className="absolute top-2 left-2 text-[10px] px-2 py-1 rounded-full bg-white/90 border text-gray-600">
-                    {isLink ? 'LINK' : isProbablyPdf(d) ? 'PDF' : isProbablyImage(d) ? 'IMAGE' : 'FILE'}
-                  </div>
-                </div>
-
-                <div className="p-3">
-                  <div className="text-sm font-medium line-clamp-2">{d.title}</div>
-                  <div className="pt-2 text-xs text-gray-500">Added {formatDateTimeShort(d.created_at)}</div>
-                </div>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Preview Modal */}
-      {previewOpen ? (
+      {/* ── Doc Preview Modal ── */}
+      {previewDoc && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) closePreview()
-          }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.6)' }}
+          onMouseDown={(e) => { if (e.target === e.currentTarget) { setPreviewDoc(null); setPreviewUrl(null) } }}
         >
-          <div className="w-full max-w-4xl bg-white rounded-2xl shadow-xl border overflow-hidden">
-            <div className="p-4 border-b flex items-start justify-between gap-4">
+          <div className="w-full max-w-3xl bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
               <div>
-                <div className="text-sm text-gray-500">Preview</div>
-                <div className="font-semibold">{previewDoc?.title ?? 'Document'}</div>
+                <p className="text-xs text-neutral-400">Document</p>
+                <p className="font-semibold text-neutral-900">{previewDoc.title}</p>
               </div>
-              <button onClick={closePreview} className="text-sm underline text-neutral-600 hover:text-black">
+              <button
+                onClick={() => { setPreviewDoc(null); setPreviewUrl(null) }}
+                className="text-sm text-neutral-400 hover:text-black transition"
+              >
                 Close
               </button>
             </div>
-
             <div className="p-4">
               {previewLoading ? (
-                <div className="text-sm text-gray-500">Loading preview…</div>
-              ) : previewError ? (
-                <div className="text-sm text-red-600">{previewError}</div>
+                <p className="text-sm text-neutral-400 py-8 text-center">Loading…</p>
               ) : !previewUrl ? (
-                <div className="text-sm text-gray-500">No preview available.</div>
-              ) : previewDoc?.embed_url || (previewDoc && isProbablyPdf(previewDoc)) ? (
+                <p className="text-sm text-neutral-400 py-8 text-center">No preview available.</p>
+              ) : previewDoc.embed_url || isPdf(previewDoc) ? (
                 <iframe
                   src={previewUrl}
-                  className="w-full h-[70vh] rounded-xl border"
-                  title="Document preview"
-                  loading="lazy"
-                  referrerPolicy="no-referrer"
+                  className="w-full rounded-xl border border-neutral-100"
+                  style={{ height: '65vh' }}
+                  title={previewDoc.title}
                   sandbox="allow-same-origin allow-scripts allow-forms allow-popups"
                 />
-              ) : previewDoc && isProbablyImage(previewDoc) ? (
-                <img src={previewUrl} alt={previewDoc.title} className="max-h-[70vh] w-auto mx-auto rounded-xl border" />
+              ) : isImage(previewDoc) ? (
+                <img src={previewUrl} alt={previewDoc.title} className="max-h-[65vh] w-auto mx-auto rounded-xl" />
               ) : (
-                <div className="rounded-xl border p-4 text-sm text-gray-600">
-                  This file type doesn’t support inline preview yet.
-                  <div className="pt-2">
-                    <button className="underline" onClick={() => window.open(previewUrl, '_blank', 'noreferrer')}>
-                      Open file
-                    </button>
-                  </div>
+                <div className="py-8 text-center">
+                  <p className="text-sm text-neutral-500 mb-3">This file type does not support inline preview.</p>
+                  <button
+                    onClick={() => window.open(previewUrl, '_blank', 'noreferrer')}
+                    className="text-sm font-medium underline"
+                    style={{ color: '#F04D3D' }}
+                  >
+                    Open file
+                  </button>
                 </div>
               )}
             </div>
           </div>
         </div>
-      ) : null}
+      )}
 
-      {/* Task Note Modal */}
-      {noteOpen ? (
+      {/* ── Task Note Modal ── */}
+      {noteOpen && (
         <div
-          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget && !savingNote) {
-              setNoteOpen(false)
-              setPendingTask(null)
-              setNoteText('')
-            }
-          }}
+          className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.5)' }}
+          onMouseDown={(e) => { if (e.target === e.currentTarget && !savingNote) { setNoteOpen(false); setPendingTask(null) } }}
         >
-          <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl border overflow-hidden">
-            <div className="p-4 border-b">
-              <div className="text-sm text-gray-500">Optional</div>
-              <div className="font-semibold">Add a quick note?</div>
-              <div className="text-xs text-gray-500 pt-1">
-                Examples: “ok to proceed”, “I’ll call you”, “please tweak this”, “approved”
-              </div>
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-neutral-100">
+              <p className="font-bold text-neutral-900">Add a quick note?</p>
+              <p className="text-xs text-neutral-400 mt-0.5">Optional — e.g. "Approved", "Let's discuss", "Please tweak"</p>
             </div>
-
-            <div className="p-4 space-y-3">
+            <div className="p-5 space-y-4">
               <textarea
                 value={noteText}
                 onChange={(e) => setNoteText(e.target.value)}
-                placeholder="Type a quick note (optional)…"
-                className="w-full border rounded-xl p-3 text-sm min-h-[110px]"
+                placeholder="Type a quick note…"
+                rows={3}
                 disabled={savingNote}
+                className="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-black/10"
               />
-
-              <div className="flex items-center justify-end gap-2">
+              <div className="flex gap-3 justify-end">
                 <button
-                  type="button"
-                  onClick={() => submitNoteAndComplete(true)}
-                  className="text-sm underline text-neutral-600 hover:text-black"
+                  onClick={() => submitNote(true)}
                   disabled={savingNote}
+                  className="text-sm text-neutral-400 hover:text-black transition"
                 >
                   Skip
                 </button>
-
                 <button
-                  type="button"
-                  onClick={() => submitNoteAndComplete(false)}
-                  className="bg-black text-white px-4 py-2 rounded-lg text-sm disabled:opacity-60"
+                  onClick={() => submitNote(false)}
                   disabled={savingNote}
+                  className="text-sm font-semibold px-4 py-2 rounded-xl text-white transition"
+                  style={{ background: '#F04D3D' }}
                 >
                   {savingNote ? 'Saving…' : 'Save & complete'}
                 </button>
@@ -670,7 +681,7 @@ export default function ClientProjectPage() {
             </div>
           </div>
         </div>
-      ) : null}
+      )}
     </div>
   )
 }

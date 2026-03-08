@@ -2,245 +2,216 @@
 
 import { supabase } from '@/lib/supabase'
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
-type InvoiceRow = {
+type Invoice = {
   id: string
-  client_id: string
-  project_id: string | null
   status: string | null
-  is_published: boolean
   amount_cents: number | null
   currency: string | null
-  hosted_invoice_url: string | null
-  pdf_url: string | null
-  stripe_invoice_id: string | null
   due_date: string | null
   created_at: string
-  updated_at: string | null
-}
-
-// Optional join (if you want to show project name)
-// This requires invoices.project_id + projects.id
-type InvoiceRowWithProject = InvoiceRow & {
+  hosted_invoice_url: string | null
+  pdf_url: string | null
   projects?: { id: string; name: string }[] | null
 }
 
-function formatMoney(amountCents: number | null, currency: string | null) {
-  if (amountCents == null) return '—'
-  const cur = (currency || 'USD').toUpperCase()
-  const amount = amountCents / 100
+function formatMoney(cents: number | null, currency: string | null) {
+  if (cents == null) return '—'
   try {
-    return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur }).format(amount)
+    return new Intl.NumberFormat('en-CA', {
+      style: 'currency',
+      currency: (currency || 'CAD').toUpperCase(),
+      maximumFractionDigits: 0,
+    }).format(cents / 100)
   } catch {
-    return `${amount.toFixed(2)} ${cur}`
+    return `$${((cents ?? 0) / 100).toFixed(0)}`
   }
 }
 
 function formatDate(ts: string | null) {
   if (!ts) return '—'
   try {
-    return new Date(ts).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
-  } catch {
-    return ts
-  }
+    return new Date(ts).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })
+  } catch { return ts }
 }
 
-function statusPill(status: string | null) {
-  const s = (status || 'unknown').toLowerCase()
-  const base = 'text-[11px] px-2 py-1 rounded-full border'
-  if (s === 'paid') return `${base} bg-green-50 border-green-200 text-green-700`
-  if (s === 'sent') return `${base} bg-blue-50 border-blue-200 text-blue-700`
-  if (s === 'open') return `${base} bg-blue-50 border-blue-200 text-blue-700`
-  if (s === 'draft') return `${base} bg-gray-50 border-gray-200 text-gray-600`
-  if (s === 'void' || s === 'uncollectible') return `${base} bg-red-50 border-red-200 text-red-700`
-  return `${base} bg-gray-50 border-gray-200 text-gray-600`
+function statusConfig(status: string | null) {
+  const s = (status ?? 'unknown').toLowerCase()
+  if (s === 'paid') return { label: 'Paid', bg: '#f0fdf4', text: '#16a34a', dot: '#22c55e' }
+  if (s === 'sent' || s === 'open') return { label: 'Outstanding', bg: '#F04D3D10', text: '#F04D3D', dot: '#F04D3D' }
+  if (s === 'draft') return { label: 'Draft', bg: '#f5f5f5', text: '#999', dot: '#ccc' }
+  if (s === 'void' || s === 'uncollectible') return { label: 'Void', bg: '#fff1f2', text: '#e11d48', dot: '#fb7185' }
+  return { label: status ?? 'Unknown', bg: '#f5f5f5', text: '#999', dot: '#ccc' }
 }
 
 export default function ClientInvoicesPage() {
+  const router = useRouter()
   const [loading, setLoading] = useState(true)
+  const [invoices, setInvoices] = useState<Invoice[]>([])
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
-
-  const [invoices, setInvoices] = useState<InvoiceRowWithProject[]>([])
 
   useEffect(() => {
     const load = async () => {
-      setLoading(true)
-      setErrorMsg(null)
-
-      const { data: authData, error: authErr } = await supabase.auth.getUser()
+      const { data: authData } = await supabase.auth.getUser()
       const userId = authData?.user?.id
-      if (authErr || !userId) {
-        setErrorMsg('You must be signed in to view invoices.')
-        setLoading(false)
-        return
-      }
+      if (!userId) { setErrorMsg('Not signed in.'); setLoading(false); return }
 
-      // IMPORTANT:
-      // If RLS policy is: client_id = auth.uid() AND is_published = true,
-      // you technically don't need the filters — but keeping them is fine.
       const { data, error } = await supabase
         .from('invoices')
-        .select(
-          `
-          id,
-          client_id,
-          project_id,
-          status,
-          is_published,
-          amount_cents,
-          currency,
-          hosted_invoice_url,
-          pdf_url,
-          stripe_invoice_id,
-          due_date,
-          created_at,
-          projects:projects ( id, name )
-        `
-        )
+        .select('id, status, amount_cents, currency, due_date, created_at, hosted_invoice_url, pdf_url, projects:projects(id, name)')
         .eq('client_id', userId)
         .eq('is_published', true)
         .order('created_at', { ascending: false })
 
-      if (error) {
-  console.error('Load invoices error RAW:', error)
-
-  try {
-    console.error('typeof error:', typeof error)
-    console.error('constructor:', (error as any)?.constructor?.name)
-    console.error('toString:', String(error))
-    console.error('own keys:', Object.keys(error as any))
-    console.error('own props:', Object.getOwnPropertyNames(error as any))
-    console.error('error.message:', (error as any)?.message)
-    console.error('error.details:', (error as any)?.details)
-    console.error('error.hint:', (error as any)?.hint)
-    console.error('error.code:', (error as any)?.code)
-    console.error('JSON.stringify(error):', JSON.stringify(error))
-  } catch (e) {
-    console.error('Could not introspect error:', e)
-  }
-
-  setErrorMsg('Could not load your invoices.')
-  setInvoices([])
-  setLoading(false)
-  return
-}
-
-      setInvoices((data || []) as InvoiceRowWithProject[])
+      if (error) { setErrorMsg('Could not load invoices.'); setLoading(false); return }
+      setInvoices((data ?? []) as Invoice[])
       setLoading(false)
     }
-
     load()
   }, [])
 
-  const totalUnpaid = useMemo(() => {
-    // Rough: counts anything not paid/void
-    const open = invoices.filter((i) => {
-      const s = (i.status || '').toLowerCase()
+  const { outstandingTotal, outstandingCount, outstandingCurrency, paidTotal } = useMemo(() => {
+    const outstanding = invoices.filter((i) => {
+      const s = (i.status ?? '').toLowerCase()
       return s !== 'paid' && s !== 'void' && s !== 'uncollectible'
     })
-    const sum = open.reduce((acc, i) => acc + (i.amount_cents || 0), 0)
-    const currency = invoices.find((i) => i.currency)?.currency || 'USD'
-    return { sum, currency }
+    const paid = invoices.filter((i) => (i.status ?? '').toLowerCase() === 'paid')
+    const currency = invoices.find((i) => i.currency)?.currency ?? 'CAD'
+    return {
+      outstandingTotal: outstanding.reduce((acc, i) => acc + (i.amount_cents ?? 0), 0),
+      outstandingCount: outstanding.length,
+      outstandingCurrency: currency,
+      paidTotal: paid.reduce((acc, i) => acc + (i.amount_cents ?? 0), 0),
+    }
   }, [invoices])
 
-  if (loading) return <p className="p-8">Loading…</p>
+  if (loading) return <div className="p-8 text-sm text-neutral-400">Loading invoices…</div>
 
   return (
-    <div className="p-8 space-y-6 max-w-[1100px] mx-auto">
-      <div>
-        <p className="text-sm text-gray-500">Billing</p>
-        <h1 className="text-3xl font-bold">Invoices</h1>
+    <div className="min-h-screen bg-neutral-50 pb-24">
+
+      {/* ── Header ── */}
+      <div className="px-6 pt-10 pb-8" style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 60%)' }}>
+        <div className="max-w-2xl mx-auto">
+          <p className="text-xs font-mono uppercase tracking-widest mb-2" style={{ color: '#7EC8A0' }}>
+            Unless Creative — Client Portal
+          </p>
+          <h1 className="text-3xl text-white">Invoices</h1>
+        </div>
       </div>
 
-      {errorMsg ? <div className="text-sm text-red-600">{errorMsg}</div> : null}
+      <div className="max-w-2xl mx-auto px-6 pt-6 space-y-4">
+        {errorMsg && <p className="text-sm text-red-500">{errorMsg}</p>}
 
-      {/* Summary */}
-      <div className="border rounded-2xl p-5 flex items-start justify-between gap-4">
-        <div>
-          <div className="text-sm text-gray-500">Outstanding (rough)</div>
-          <div className="text-2xl font-semibold">{formatMoney(totalUnpaid.sum, totalUnpaid.currency)}</div>
-          <div className="text-xs text-gray-500 pt-1">
-            This is a simple estimate based on invoice status.
+        {/* ── Summary Cards ── */}
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-white border border-neutral-200 rounded-2xl p-4">
+            <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-1">Outstanding</p>
+            <p className="text-2xl font-bold" style={{ color: outstandingCount > 0 ? '#F04D3D' : '#1A3428' }}>
+              {formatMoney(outstandingTotal, outstandingCurrency)}
+            </p>
+            <p className="text-xs text-neutral-400 mt-1">
+              {outstandingCount === 0 ? 'All paid up ✓' : `${outstandingCount} invoice${outstandingCount !== 1 ? 's' : ''}`}
+            </p>
+          </div>
+          <div className="bg-white border border-neutral-200 rounded-2xl p-4">
+            <p className="text-xs font-semibold uppercase tracking-widest text-neutral-400 mb-1">Paid to date</p>
+            <p className="text-2xl font-bold text-neutral-800">
+              {formatMoney(paidTotal, outstandingCurrency)}
+            </p>
+            <p className="text-xs text-neutral-400 mt-1">
+              {invoices.filter((i) => (i.status ?? '').toLowerCase() === 'paid').length} paid invoice{invoices.filter((i) => (i.status ?? '').toLowerCase() === 'paid').length !== 1 ? 's' : ''}
+            </p>
           </div>
         </div>
 
-        <div className="text-xs text-gray-500 text-right">
-          Showing published invoices only
-        </div>
-      </div>
-
-      {/* List */}
-      <div className="border rounded-2xl p-5 space-y-3">
-        {invoices.length === 0 ? (
-          <div className="text-sm text-gray-500">No invoices yet.</div>
-        ) : (
-          <div className="space-y-2">
-            {invoices.map((inv) => {
-              const projectName = inv.projects?.[0]?.name || (inv.project_id ? 'Project' : null)
-              const amount = formatMoney(inv.amount_cents, inv.currency)
-              const status = inv.status || 'unknown'
-
+        {/* ── Invoice List ── */}
+        <div className="space-y-3">
+          {invoices.length === 0 ? (
+            <div className="bg-white border border-dashed border-neutral-300 rounded-2xl p-8 text-center">
+              <p className="text-sm text-neutral-400">No invoices yet.</p>
+            </div>
+          ) : (
+            invoices.map((inv) => {
+              const sc = statusConfig(inv.status)
+              const projectName = inv.projects?.[0]?.name ?? null
               return (
-                <div key={inv.id} className="border rounded-xl p-4">
+                <div key={inv.id} className="bg-white border border-neutral-200 rounded-2xl p-5">
                   <div className="flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className="font-semibold">{amount}</div>
-                        <span className={statusPill(status)}>{status.toUpperCase()}</span>
-                        {projectName ? (
-                          <span className="text-xs text-gray-500">• {projectName}</span>
-                        ) : null}
+                    <div className="flex-1 min-w-0">
+                      {/* Status + amount */}
+                      <div className="flex items-center gap-2 mb-2 flex-wrap">
+                        <span
+                          className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full"
+                          style={{ background: sc.bg, color: sc.text }}
+                        >
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: sc.dot }} />
+                          {sc.label}
+                        </span>
+                        {projectName && (
+                          <span className="text-xs text-neutral-400">· {projectName}</span>
+                        )}
                       </div>
-
-                      <div className="text-xs text-gray-500 pt-2 flex flex-wrap gap-x-3 gap-y-1">
-                        <span>Issued {formatDate(inv.created_at)}</span>
-                        <span>•</span>
-                        <span>Due {formatDate(inv.due_date)}</span>
-                        {inv.stripe_invoice_id ? (
-                          <>
-                            <span>•</span>
-                            <span className="text-gray-400">Stripe: {inv.stripe_invoice_id.slice(0, 10)}…</span>
-                          </>
-                        ) : null}
+                      <p className="text-2xl font-bold text-neutral-900">
+                        {formatMoney(inv.amount_cents, inv.currency)}
+                      </p>
+                      <div className="flex gap-4 mt-2">
+                        <div>
+                          <p className="text-xs text-neutral-400">Issued</p>
+                          <p className="text-xs font-medium text-neutral-600">{formatDate(inv.created_at)}</p>
+                        </div>
+                        {inv.due_date && (
+                          <div>
+                            <p className="text-xs text-neutral-400">Due</p>
+                            <p className="text-xs font-medium text-neutral-600">{formatDate(inv.due_date)}</p>
+                          </div>
+                        )}
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 shrink-0">
-                      {inv.pdf_url ? (
-                        <button
-                          type="button"
-                          onClick={() => window.open(inv.pdf_url!, '_blank', 'noreferrer')}
-                          className="border rounded-xl px-3 py-2 text-sm hover:border-black"
-                        >
-                          PDF
-                        </button>
-                      ) : null}
-
+                    {/* Actions */}
+                    <div className="flex flex-col gap-2 shrink-0">
                       {inv.hosted_invoice_url ? (
                         <button
-                          type="button"
                           onClick={() => window.open(inv.hosted_invoice_url!, '_blank', 'noreferrer')}
-                          className="bg-black text-white rounded-xl px-3 py-2 text-sm"
+                          className="text-xs font-semibold px-4 py-2 rounded-xl text-white transition hover:opacity-90"
+                          style={{ background: (inv.status ?? '').toLowerCase() === 'paid' ? '#1A3428' : '#F04D3D' }}
                         >
-                          View / Pay
+                          {(inv.status ?? '').toLowerCase() === 'paid' ? 'View' : 'Pay Now'}
                         </button>
                       ) : (
                         <button
-                          type="button"
                           disabled
-                          className="bg-black text-white rounded-xl px-3 py-2 text-sm opacity-50"
-                          title="No payment link available yet"
+                          className="text-xs font-semibold px-4 py-2 rounded-xl text-white opacity-40 cursor-not-allowed"
+                          style={{ background: '#999' }}
                         >
-                          View / Pay
+                          View
+                        </button>
+                      )}
+                      {inv.pdf_url && (
+                        <button
+                          onClick={() => window.open(inv.pdf_url!, '_blank', 'noreferrer')}
+                          className="text-xs font-medium px-4 py-2 rounded-xl border border-neutral-200 text-neutral-600 hover:border-neutral-400 transition"
+                        >
+                          PDF
                         </button>
                       )}
                     </div>
                   </div>
                 </div>
               )
-            })}
-          </div>
-        )}
+            })
+          )}
+        </div>
+
+        {/* Back */}
+        <button
+          onClick={() => router.push('/dashboard/client')}
+          className="text-xs text-neutral-400 hover:text-black transition"
+        >
+          ← Back to dashboard
+        </button>
       </div>
     </div>
   )

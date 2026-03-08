@@ -7,7 +7,16 @@ import { useRouter } from 'next/navigation'
 type Project = {
   id: string
   name: string
-  created_at?: string
+  project_type: string | null
+  created_at: string
+}
+
+function typeLabelFull(type: string | null) {
+  if (!type) return null
+  if (type === 'brand-alignment-intensive' || type === 'BAI') return 'Brand Alignment Intensive'
+  if (type === 'brand-system-build' || type === 'BSB') return 'Brand System Build'
+  if (type === 'brand-stewardship-retainer' || type === 'BSR') return 'Brand Stewardship Retainer'
+  return type
 }
 
 export default function ClientProjectsPage() {
@@ -17,59 +26,72 @@ export default function ClientProjectsPage() {
 
   useEffect(() => {
     const load = async () => {
-      setLoading(true)
+      const { data: authData } = await supabase.auth.getUser()
+      const userId = authData?.user?.id
+      if (!userId) { setLoading(false); return }
 
-      // NOTE: if you have auth + client_id filtering, filter here.
       const { data, error } = await supabase
         .from('projects')
-        .select('id, name, created_at')
+        .select('id, name, project_type, created_at')
+        .eq('client_id', userId)
         .order('created_at', { ascending: false })
 
-      if (error) {
-        console.error('Load projects error:', error)
-        setProjects([])
-        setLoading(false)
-        return
-      }
-
-      setProjects((data || []) as Project[])
+      if (error) console.error('Load projects error:', error)
+      setProjects((data ?? []) as Project[])
       setLoading(false)
     }
-
     load()
   }, [])
 
-  if (loading) return <p className="p-8">Loading…</p>
+  if (loading) return <div className="p-8 text-sm text-neutral-400">Loading…</div>
 
   return (
-    <div className="p-8 space-y-4 max-w-[1100px] mx-auto">
-      <div>
-        <p className="text-sm text-gray-500">Client Portal</p>
-        <h1 className="text-3xl font-bold">Projects</h1>
+    <div className="min-h-screen bg-neutral-50 pb-24">
+      <div
+        className="px-6 pt-10 pb-8"
+        style={{ background: 'linear-gradient(135deg, #1A3428 0%, #0d0d0d 60%)' }}
+      >
+        <div className="max-w-2xl mx-auto">
+          <p className="text-xs font-mono uppercase tracking-widest mb-2" style={{ color: '#7EC8A0' }}>
+            Unless Creative — Client Portal
+          </p>
+          <h1 className="text-3xl text-white">Your Projects</h1>
+        </div>
       </div>
 
-      {projects.length === 0 ? (
-        <div className="border rounded-2xl p-6 text-sm text-gray-500">
-          No projects yet.
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {projects.map((p) => (
+      <div className="max-w-2xl mx-auto px-6 pt-6 space-y-3">
+        {projects.length === 0 ? (
+          <div className="bg-white border border-dashed border-neutral-300 rounded-2xl p-10 text-center">
+            <p className="text-neutral-400 text-sm">No projects yet — Riley will set one up for you.</p>
+          </div>
+        ) : (
+          projects.map((p) => (
             <button
               key={p.id}
               onClick={() => router.push(`/dashboard/client/projects/${p.id}`)}
-              className="text-left border rounded-2xl p-5 hover:border-black transition"
+              className="w-full text-left bg-white border border-neutral-200 rounded-2xl px-6 py-5 hover:border-neutral-400 hover:shadow-sm transition-all group"
             >
-              <div className="font-semibold">{p.name}</div>
-              {p.created_at ? (
-                <div className="pt-1 text-xs text-gray-500">
-                  Created {new Date(p.created_at).toLocaleDateString()}
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  {p.project_type && (
+                    <span
+                      className="inline-block text-xs font-semibold px-2 py-0.5 rounded-full mb-1.5"
+                      style={{ background: '#F04D3D15', color: '#F04D3D' }}
+                    >
+                      {typeLabelFull(p.project_type)}
+                    </span>
+                  )}
+                  <p className="font-bold text-neutral-900 group-hover:text-black">{p.name}</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    Started {new Date(p.created_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  </p>
                 </div>
-              ) : null}
+                <span className="text-neutral-300 group-hover:text-neutral-500 transition text-lg">→</span>
+              </div>
             </button>
-          ))}
-        </div>
-      )}
+          ))
+        )}
+      </div>
     </div>
   )
 }
