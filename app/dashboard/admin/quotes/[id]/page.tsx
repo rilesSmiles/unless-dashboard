@@ -27,7 +27,7 @@ const STATUS_STYLE: Record<string, string> = {
   sent:      'bg-blue-50 text-blue-700',
   accepted:  'bg-emerald-50 text-emerald-700',
   declined:  'bg-red-50 text-red-700',
-  converted: 'bg-amber-50 text-amber-700',
+  converted: 'bg-[#F04D3D]/10 text-[#F04D3D]',
 }
 
 export default function QuoteDetailPage() {

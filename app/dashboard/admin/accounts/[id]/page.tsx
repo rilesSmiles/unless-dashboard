@@ -10,7 +10,7 @@ type Project = { id: string; name: string; client_id: string | null; project_typ
 type Invoice = { id: string; invoice_number: string | null; amount: number; amount_cents: number | null; status: string; created_at: string; client_id: string | null }
 
 const TYPE_PIP: Record<string, string> = {
-  'Brand Alignment Intensive':  'bg-amber-400',
+  'Brand Alignment Intensive':  'bg-[#F04D3D]',
   'Brand System Build':         'bg-stone-400',
   'Brand Stewardship Retainer': 'bg-neutral-400',
 }
