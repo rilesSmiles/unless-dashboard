@@ -87,10 +87,24 @@ export default function AdminAccountDetailPage() {
     const typed = prompt(`Type DELETE to permanently remove ${client.business_name ?? 'this client'}`)
     if (typed !== 'DELETE') return
     setDeletingClient(true)
-    await supabase.from('client_contacts').delete().eq('client_id', clientId)
-    await supabase.from('profiles').delete().eq('id', clientId)
-    setDeletingClient(false)
-    router.push('/dashboard/admin/accounts')
+
+    try {
+      const res = await fetch('/api/clients/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        alert(data?.error ?? 'Failed to delete client')
+        setDeletingClient(false)
+        return
+      }
+      router.push('/dashboard/admin/accounts')
+    } catch (e: any) {
+      alert(e?.message ?? 'Request failed')
+      setDeletingClient(false)
+    }
   }
 
   if (loading) return <div className="p-8 text-neutral-400 text-sm">Loading account…</div>
