@@ -126,7 +126,7 @@ export default function InvoiceDetailPage() {
   }
 
   const markSent = async () => {
-    await supabase.from('invoices').update({ status: 'sent', updated_at: new Date().toISOString() }).eq('id', id)
+    await supabase.from('invoices').update({ status: 'sent', is_published: true, updated_at: new Date().toISOString() }).eq('id', id)
     setInvoice((p) => p ? { ...p, status: 'sent' } : p)
   }
 
@@ -197,7 +197,7 @@ export default function InvoiceDetailPage() {
               <p className="text-white text-2xl font-bold tracking-tight">Unless Creative</p>
               <p className="text-neutral-400 text-sm mt-1">Brand Strategy Consultancy</p>
               <p className="text-neutral-500 text-xs mt-3">Calgary, AB</p>
-              <p className="text-neutral-500 text-xs">hello@unlesscreative.com</p>
+              <p className="text-neutral-500 text-xs">admin@unlesscreative.com</p>
             </div>
             <div className="text-right">
               <p className="text-neutral-400 text-xs uppercase tracking-widest font-medium">
@@ -414,7 +414,7 @@ export default function InvoiceDetailPage() {
 
           {/* Footer */}
           <div className="bg-neutral-50 border-t border-neutral-100 px-10 py-5 flex items-center justify-between">
-            <p className="text-xs text-neutral-400">Unless Creative · Calgary, AB · hello@unlesscreative.com</p>
+            <p className="text-xs text-neutral-400">Unless Creative · Calgary, AB · admin@unlesscreative.com</p>
             <p className="text-xs text-neutral-300">Thank you for your business.</p>
           </div>
         </div>
