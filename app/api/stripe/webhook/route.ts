@@ -9,9 +9,6 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-// Vercel requires raw body for Stripe webhook signature verification
-export const config = { api: { bodyParser: false } }
-
 export async function POST(req: NextRequest) {
   const rawBody = await req.text()
   const sig = req.headers.get('stripe-signature')
