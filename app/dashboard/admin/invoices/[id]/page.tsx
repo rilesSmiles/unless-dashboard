@@ -48,6 +48,7 @@ export default function InvoiceDetailPage() {
   const [dueDate, setDueDate]             = useState('')
   const [notes, setNotes]                 = useState('')
   const [taxRate, setTaxRate]             = useState(0)
+  const [serviceFeeRate, setServiceFeeRate] = useState(0.007)
 
   useEffect(() => {
     const load = async () => {
@@ -66,6 +67,7 @@ export default function InvoiceDetailPage() {
         setDueDate(inv.due_date ?? '')
         setNotes(inv.notes ?? '')
         setTaxRate(Number(inv.tax_rate ?? 0))
+        setServiceFeeRate(Number(inv.service_fee_rate ?? 0.007))
       }
       setLineItems(items ?? [])
       setLoading(false)
@@ -76,7 +78,8 @@ export default function InvoiceDetailPage() {
   // ── Computed totals ──
   const subtotal = lineItems.reduce((s, i) => s + Math.round(i.quantity * i.unit_price_cents), 0)
   const taxAmount = Math.round(subtotal * taxRate)
-  const total = subtotal + taxAmount
+  const serviceFeeAmount = Math.round(subtotal * serviceFeeRate)
+  const total = subtotal + taxAmount + serviceFeeAmount
 
   // ── Line item helpers ──
   const addLineItem = async () => {
@@ -110,16 +113,17 @@ export default function InvoiceDetailPage() {
   const handleSave = async () => {
     setSaving(true)
     await supabase.from('invoices').update({
-      bill_to_name:     billToName.trim() || null,
-      bill_to_email:    billToEmail.trim() || null,
-      bill_to_position: billToPosition.trim() || null,
-      bill_to_address:  billToAddress.trim() || null,
-      due_date:         dueDate || null,
-      notes:            notes.trim() || null,
-      tax_rate:         taxRate,
-      amount_cents:     total,
-      amount:           total,
-      updated_at:       new Date().toISOString(),
+      bill_to_name:      billToName.trim() || null,
+      bill_to_email:     billToEmail.trim() || null,
+      bill_to_position:  billToPosition.trim() || null,
+      bill_to_address:   billToAddress.trim() || null,
+      due_date:          dueDate || null,
+      notes:             notes.trim() || null,
+      tax_rate:          taxRate,
+      service_fee_rate:  serviceFeeRate,
+      amount_cents:      total,
+      amount:            total,
+      updated_at:        new Date().toISOString(),
     }).eq('id', id)
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 3000)
     setInvoice((p) => p ? { ...p, bill_to_name: billToName, bill_to_email: billToEmail, tax_rate: taxRate } : p)
@@ -364,7 +368,7 @@ export default function InvoiceDetailPage() {
               </div>
               <div className="flex items-center justify-between text-sm">
                 <span className="text-neutral-500">
-                  Tax
+                  GST
                   {isEditable ? (
                     <span className="ml-2">
                       (<input type="number" value={(taxRate * 100).toFixed(1)} min={0} max={100} step={0.5}
@@ -376,6 +380,21 @@ export default function InvoiceDetailPage() {
                   )}
                 </span>
                 <span className="font-medium">{fmtMoney(taxAmount)}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-neutral-500">
+                  Service Fee
+                  {isEditable ? (
+                    <span className="ml-2">
+                      (<input type="number" value={(serviceFeeRate * 100).toFixed(2)} min={0} max={10} step={0.01}
+                        onChange={(e) => setServiceFeeRate((parseFloat(e.target.value) || 0) / 100)}
+                        className="w-14 text-center border border-neutral-200 rounded-lg px-1 py-0.5 text-xs focus:outline-none" />%)
+                    </span>
+                  ) : (
+                    <span className="text-neutral-400"> ({(serviceFeeRate * 100).toFixed(2)}%)</span>
+                  )}
+                </span>
+                <span className="font-medium">{fmtMoney(serviceFeeAmount)}</span>
               </div>
               <div className="flex items-center justify-between border-t border-neutral-200 pt-3 mt-1">
                 <span className="font-bold text-neutral-900 text-base">Total</span>

@@ -1,69 +1,56 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2026-01-28.clover',
-})
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: '2025-01-27.acacia' })
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-export async function POST(req: Request) {
-  const body = await req.text()
+// Vercel requires raw body for Stripe webhook signature verification
+export const config = { api: { bodyParser: false } }
+
+export async function POST(req: NextRequest) {
+  const rawBody = await req.text()
   const sig = req.headers.get('stripe-signature')
 
-  if (!sig) {
-    return NextResponse.json(
-      { error: 'Missing stripe-signature' },
-      { status: 400 }
-    )
-  }
+  if (!sig) return NextResponse.json({ error: 'No signature' }, { status: 400 })
 
   let event: Stripe.Event
-
   try {
-    event = stripe.webhooks.constructEvent(
-      body,
-      sig,
-      process.env.STRIPE_WEBHOOK_SECRET!
-    )
+    event = stripe.webhooks.constructEvent(rawBody, sig, process.env.STRIPE_WEBHOOK_SECRET!)
   } catch (err: any) {
-    console.error('Webhook signature error:', err.message)
-    return NextResponse.json(
-      { error: 'Invalid signature' },
-      { status: 400 }
-    )
+    console.error('Webhook signature verification failed:', err.message)
+    return NextResponse.json({ error: `Webhook Error: ${err.message}` }, { status: 400 })
   }
 
-  try {
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object as Stripe.Checkout.Session
-      const invoiceId = session.metadata?.invoiceId
+  // Handle payment success
+  if (event.type === 'payment_intent.succeeded') {
+    const pi = event.data.object as Stripe.PaymentIntent
+    const invoiceId = pi.metadata?.invoiceId
 
-      if (invoiceId) {
-        await supabaseAdmin
-          .from('invoices')
-          .update({
-            status: 'paid',
-            paid_at: new Date().toISOString(),
-            stripe_payment_intent_id:
-              typeof session.payment_intent === 'string'
-                ? session.payment_intent
-                : null,
-          })
-          .eq('id', invoiceId)
+    if (invoiceId) {
+      const now = new Date().toISOString()
+      const { error } = await supabaseAdmin
+        .from('invoices')
+        .update({ status: 'paid', paid_at: now, updated_at: now })
+        .eq('id', invoiceId)
+
+      if (error) {
+        console.error('Failed to mark invoice paid:', error)
+        return NextResponse.json({ error: 'DB update failed' }, { status: 500 })
       }
+      console.log(`✓ Invoice ${invoiceId} marked paid via Stripe PaymentIntent ${pi.id}`)
     }
-
-    return NextResponse.json({ received: true })
-  } catch (err: any) {
-    console.error('Webhook handler error:', err)
-    return NextResponse.json(
-      { error: 'Webhook handler failed' },
-      { status: 500 }
-    )
   }
+
+  // Handle payment failure (optional — resets intent so client can retry)
+  if (event.type === 'payment_intent.payment_failed') {
+    const pi = event.data.object as Stripe.PaymentIntent
+    console.log(`✗ Payment failed for invoice ${pi.metadata?.invoiceId}: ${pi.last_payment_error?.message}`)
+  }
+
+  return NextResponse.json({ received: true })
 }

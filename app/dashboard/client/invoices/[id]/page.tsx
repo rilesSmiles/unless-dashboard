@@ -3,7 +3,17 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { loadStripe } from '@stripe/stripe-js'
+import {
+  Elements,
+  PaymentElement,
+  useStripe,
+  useElements,
+} from '@stripe/react-stripe-js'
 
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 type LineItem = {
   id: string; description: string; quantity: number; unit_price_cents: number; sort_order: number
 }
@@ -12,12 +22,13 @@ type Invoice = {
   bill_to_name: string | null; bill_to_email: string | null
   bill_to_position: string | null; bill_to_address: string | null
   due_date: string | null; paid_at: string | null; notes: string | null
-  tax_rate: number; amount_cents: number | null
+  tax_rate: number; service_fee_rate: number; amount_cents: number | null
   is_deposit: boolean; is_published: boolean
   project_name: string | null; business_name: string | null
   created_at: string; updated_at: string | null
 }
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtMoney = (cents: number) =>
   new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(cents / 100)
 const fmtDate = (s: string | null) =>
@@ -30,6 +41,63 @@ const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; d
   draft:   { label: 'Draft',       bg: '#f5f5f5',   text: '#999',    dot: '#ccc' },
 }
 
+// ─── Payment Form (inner — needs Elements context) ────────────────────────────
+function PaymentForm({ invoiceId, total, onSuccess }: { invoiceId: string; total: number; onSuccess: () => void }) {
+  const stripe = useStripe()
+  const elements = useElements()
+  const [paying, setPaying] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handlePay = async () => {
+    if (!stripe || !elements) return
+    setPaying(true)
+    setError(null)
+
+    const { error: submitErr } = await elements.submit()
+    if (submitErr) { setError(submitErr.message ?? 'Card error'); setPaying(false); return }
+
+    const { error: confirmErr } = await stripe.confirmPayment({
+      elements,
+      redirect: 'if_required',
+      confirmParams: {
+        return_url: `${window.location.origin}/dashboard/client/invoices/${invoiceId}?paid=1`,
+      },
+    })
+
+    if (confirmErr) {
+      setError(confirmErr.message ?? 'Payment failed. Please try again.')
+      setPaying(false)
+    } else {
+      // Payment succeeded (no redirect needed)
+      onSuccess()
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <PaymentElement options={{ layout: 'tabs' }} />
+      {error && (
+        <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-xl px-4 py-3">
+          <span className="text-red-500 text-sm shrink-0">⚠</span>
+          <p className="text-sm text-red-700">{error}</p>
+        </div>
+      )}
+      <button
+        onClick={handlePay}
+        disabled={paying || !stripe}
+        className="w-full py-3.5 rounded-xl text-white font-semibold text-sm transition disabled:opacity-50"
+        style={{ background: paying ? '#999' : '#F04D3D' }}
+      >
+        {paying ? 'Processing…' : `Pay ${fmtMoney(total)} now`}
+      </button>
+      <p className="text-xs text-neutral-400 text-center flex items-center justify-center gap-1.5">
+        <span>🔒</span> Secured by Stripe — Unless Creative never stores your card details
+      </p>
+    </div>
+  )
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ClientInvoiceDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -38,6 +106,13 @@ export default function ClientInvoiceDetailPage() {
   const [lineItems, setLineItems] = useState<LineItem[]>([])
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
+
+  // Stripe payment state
+  const [clientSecret, setClientSecret] = useState<string | null>(null)
+  const [loadingPayment, setLoadingPayment] = useState(false)
+  const [paymentError, setPaymentError] = useState<string | null>(null)
+  const [paid, setPaid] = useState(false)
+  const [showPayForm, setShowPayForm] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -67,24 +142,76 @@ export default function ClientInvoiceDetailPage() {
       setInvoice({ ...inv, project_name, business_name })
       setLineItems(items ?? [])
       setLoading(false)
+
+      // If redirected back from Stripe with ?paid=1
+      if (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('paid') === '1') {
+        setPaid(true)
+      }
     }
     load()
   }, [id])
+
+  const initializePayment = async () => {
+    if (!invoice) return
+    setLoadingPayment(true)
+    setPaymentError(null)
+    try {
+      const res = await fetch('/api/stripe/create-payment-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoiceId: invoice.id }),
+      })
+      const data = await res.json()
+      if (!res.ok || !data.clientSecret) {
+        setPaymentError(data.error ?? 'Could not initialize payment.')
+        setLoadingPayment(false)
+        return
+      }
+      setClientSecret(data.clientSecret)
+      setShowPayForm(true)
+    } catch {
+      setPaymentError('Network error. Please try again.')
+    }
+    setLoadingPayment(false)
+  }
+
+  const handlePaymentSuccess = () => {
+    setPaid(true)
+    setShowPayForm(false)
+    setInvoice((p) => p ? { ...p, status: 'paid', paid_at: new Date().toISOString() } : p)
+  }
 
   if (loading) return <div className="p-8 text-sm text-neutral-400">Loading invoice…</div>
   if (notFound || !invoice) return (
     <div className="p-8 text-center space-y-3">
       <p className="text-sm text-neutral-400">Invoice not found.</p>
-      <button onClick={() => router.push('/dashboard/client/invoices')} className="text-sm text-[#F04D3D] underline">← Back to invoices</button>
+      <button onClick={() => router.push('/dashboard/client/invoices')} className="text-sm underline" style={{ color: '#F04D3D' }}>← Back to invoices</button>
     </div>
   )
 
   const subtotal = lineItems.reduce((s, i) => s + Math.round(i.quantity * i.unit_price_cents), 0)
   const taxRate = Number(invoice.tax_rate ?? 0)
   const taxAmount = Math.round(subtotal * taxRate)
-  const total = subtotal + taxAmount
+  const serviceFeeRate = Number(invoice.service_fee_rate ?? 0.007)
+  const serviceFeeAmount = Math.round(subtotal * serviceFeeRate)
+  const total = subtotal + taxAmount + serviceFeeAmount
 
-  const sc = STATUS_CONFIG[invoice.status] ?? STATUS_CONFIG['draft']
+  const sc = STATUS_CONFIG[paid ? 'paid' : invoice.status] ?? STATUS_CONFIG['sent']
+  const isPaid = paid || invoice.status === 'paid'
+  const isPayable = !isPaid && ['sent', 'overdue'].includes(invoice.status)
+
+  const stripeAppearance = {
+    theme: 'stripe' as const,
+    variables: {
+      colorPrimary: '#F04D3D',
+      colorBackground: '#ffffff',
+      colorText: '#1a1a1a',
+      colorDanger: '#e11d48',
+      fontFamily: 'system-ui, sans-serif',
+      borderRadius: '12px',
+      spacingUnit: '4px',
+    },
+  }
 
   return (
     <div className="min-h-screen bg-neutral-100 pb-16">
@@ -102,15 +229,73 @@ export default function ClientInvoiceDetailPage() {
               <span className="w-1.5 h-1.5 rounded-full" style={{ background: sc.dot }} />
               {sc.label}
             </span>
-            {invoice.status === 'paid' && (
-              <span className="text-xs font-medium text-green-600">✓ Paid {fmtDate(invoice.paid_at)}</span>
-            )}
           </div>
         </div>
       </div>
 
-      {/* Invoice document */}
-      <div className="max-w-3xl mx-auto px-4 py-8">
+      <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+
+        {/* ── Paid confirmation banner ── */}
+        {isPaid && (
+          <div className="rounded-2xl px-6 py-4 flex items-center gap-3" style={{ background: '#f0fdf4', border: '1px solid #bbf7d0' }}>
+            <span className="text-2xl">✅</span>
+            <div>
+              <p className="font-semibold text-green-800">Payment received — thank you!</p>
+              <p className="text-sm text-green-600">
+                {invoice.paid_at ? `Paid on ${fmtDate(invoice.paid_at)}` : 'This invoice has been paid.'}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Payment form ── */}
+        {isPayable && !showPayForm && (
+          <div className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-4">
+            <div>
+              <h2 className="font-bold text-neutral-900 text-lg">Ready to pay?</h2>
+              <p className="text-sm text-neutral-500 mt-1">
+                {fmtMoney(total)} due {invoice.due_date ? `by ${fmtDate(invoice.due_date)}` : 'now'}.
+              </p>
+            </div>
+            {paymentError && (
+              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-2">{paymentError}</p>
+            )}
+            <button
+              onClick={initializePayment}
+              disabled={loadingPayment}
+              className="w-full py-3.5 rounded-xl text-white font-semibold text-sm transition disabled:opacity-50"
+              style={{ background: '#F04D3D' }}
+            >
+              {loadingPayment ? 'Loading…' : `Pay ${fmtMoney(total)} →`}
+            </button>
+            <div className="flex items-start gap-3 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3">
+              <span className="text-base mt-0.5">💸</span>
+              <div>
+                <p className="text-xs font-semibold text-neutral-700">Prefer to pay by e-transfer?</p>
+                <p className="text-xs text-neutral-500 mt-0.5">
+                  Send to <span className="font-medium text-neutral-700">rileymelinaschmitz@gmail.com</span> with your invoice number in the message. Once received, your invoice will be marked as paid.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isPayable && showPayForm && clientSecret && (
+          <div className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="font-bold text-neutral-900 text-lg">Enter payment details</h2>
+              <button onClick={() => setShowPayForm(false)} className="text-xs text-neutral-400 hover:text-black transition">Cancel</button>
+            </div>
+            <Elements
+              stripe={stripePromise}
+              options={{ clientSecret, appearance: stripeAppearance, locale: 'en-CA' }}
+            >
+              <PaymentForm invoiceId={invoice.id} total={total} onSuccess={handlePaymentSuccess} />
+            </Elements>
+          </div>
+        )}
+
+        {/* ── Invoice document ── */}
         <div className="bg-white rounded-3xl shadow-sm border border-neutral-200 overflow-hidden">
 
           {/* Header */}
@@ -125,7 +310,7 @@ export default function ClientInvoiceDetailPage() {
               <p className="text-neutral-400 text-xs uppercase tracking-widest font-medium">
                 {invoice.is_deposit ? 'Deposit Invoice' : 'Invoice'}
               </p>
-              <p className="text-[#F04D3D] text-3xl font-bold mt-1">{invoice.invoice_number ?? '—'}</p>
+              <p className="text-3xl font-bold mt-1" style={{ color: '#F04D3D' }}>{invoice.invoice_number ?? '—'}</p>
               <div className="mt-4 space-y-1">
                 <div className="flex items-center justify-end gap-3">
                   <span className="text-neutral-500 text-xs">Issue Date</span>
@@ -139,7 +324,7 @@ export default function ClientInvoiceDetailPage() {
                     </span>
                   </div>
                 )}
-                {invoice.status === 'paid' && invoice.paid_at && (
+                {isPaid && invoice.paid_at && (
                   <div className="flex items-center justify-end gap-3">
                     <span className="text-neutral-500 text-xs">Paid</span>
                     <span className="text-green-400 text-xs font-medium">{fmtDate(invoice.paid_at)}</span>
@@ -157,9 +342,7 @@ export default function ClientInvoiceDetailPage() {
                 <p className="font-semibold text-neutral-900">{invoice.bill_to_name || '—'}</p>
                 {invoice.bill_to_position && <p className="text-sm text-neutral-500">{invoice.bill_to_position}</p>}
                 {invoice.bill_to_email && <p className="text-sm text-neutral-500">{invoice.bill_to_email}</p>}
-                {invoice.bill_to_address && (
-                  <p className="text-sm text-neutral-400 whitespace-pre-line">{invoice.bill_to_address}</p>
-                )}
+                {invoice.bill_to_address && <p className="text-sm text-neutral-400 whitespace-pre-line">{invoice.bill_to_address}</p>}
               </div>
             </div>
             <div>
@@ -185,24 +368,14 @@ export default function ClientInvoiceDetailPage() {
               </thead>
               <tbody className="divide-y divide-neutral-50">
                 {lineItems.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="py-8 text-center text-sm text-neutral-400">No line items.</td>
-                  </tr>
+                  <tr><td colSpan={4} className="py-8 text-center text-sm text-neutral-400">No line items.</td></tr>
                 )}
                 {lineItems.map((item) => (
                   <tr key={item.id}>
-                    <td className="py-3 pr-4">
-                      <span className="text-sm text-neutral-800">{item.description || '—'}</span>
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <span className="text-sm text-neutral-600">{item.quantity}</span>
-                    </td>
-                    <td className="py-3 px-4 text-right">
-                      <span className="text-sm text-neutral-600">{fmtMoney(item.unit_price_cents)}</span>
-                    </td>
-                    <td className="py-3 text-right">
-                      <span className="text-sm font-medium text-neutral-900">{fmtMoney(Math.round(item.quantity * item.unit_price_cents))}</span>
-                    </td>
+                    <td className="py-3 pr-4"><span className="text-sm text-neutral-800">{item.description || '—'}</span></td>
+                    <td className="py-3 px-4 text-right"><span className="text-sm text-neutral-600">{item.quantity}</span></td>
+                    <td className="py-3 px-4 text-right"><span className="text-sm text-neutral-600">{fmtMoney(item.unit_price_cents)}</span></td>
+                    <td className="py-3 text-right"><span className="text-sm font-medium text-neutral-900">{fmtMoney(Math.round(item.quantity * item.unit_price_cents))}</span></td>
                   </tr>
                 ))}
               </tbody>
@@ -218,15 +391,21 @@ export default function ClientInvoiceDetailPage() {
               </div>
               {taxRate > 0 && (
                 <div className="flex items-center justify-between text-sm">
-                  <span className="text-neutral-500">Tax ({(taxRate * 100).toFixed(1)}%)</span>
+                  <span className="text-neutral-500">GST ({(taxRate * 100).toFixed(1)}%)</span>
                   <span className="font-medium">{fmtMoney(taxAmount)}</span>
+                </div>
+              )}
+              {serviceFeeRate > 0 && (
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-neutral-500">Service Fee ({(serviceFeeRate * 100).toFixed(2)}%)</span>
+                  <span className="font-medium">{fmtMoney(serviceFeeAmount)}</span>
                 </div>
               )}
               <div className="flex items-center justify-between border-t border-neutral-200 pt-3 mt-1">
                 <span className="font-bold text-neutral-900 text-base">Total</span>
                 <span className="font-bold text-neutral-900 text-xl">{fmtMoney(total)}</span>
               </div>
-              {invoice.status === 'paid' && (
+              {isPaid && (
                 <div className="flex items-center justify-between text-green-600 text-sm font-medium pt-1">
                   <span>Amount Paid</span>
                   <span>{fmtMoney(total)}</span>
@@ -251,7 +430,7 @@ export default function ClientInvoiceDetailPage() {
         </div>
 
         <button onClick={() => router.push('/dashboard/client/invoices')}
-          className="mt-6 text-xs text-neutral-400 hover:text-black transition">
+          className="text-xs text-neutral-400 hover:text-black transition">
           ← Back to all invoices
         </button>
       </div>
