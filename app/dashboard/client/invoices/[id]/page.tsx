@@ -294,7 +294,7 @@ export default function ClientInvoiceDetailPage() {
             </Elements>
           </div>
         )}
-        */
+        */}
 
         {/* ── Invoice document ── */}
         <div className="bg-white rounded-3xl shadow-sm border border-neutral-200 overflow-hidden">
