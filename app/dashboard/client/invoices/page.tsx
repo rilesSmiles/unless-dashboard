@@ -3,16 +3,16 @@
 import { supabase } from '@/lib/supabase'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 
 type Invoice = {
   id: string
+  invoice_number: string | null
   status: string | null
   amount_cents: number | null
   currency: string | null
   due_date: string | null
   created_at: string
-  hosted_invoice_url: string | null
-  pdf_url: string | null
   projects?: { id: string; name: string }[] | null
 }
 
@@ -59,7 +59,7 @@ export default function ClientInvoicesPage() {
 
       const { data, error } = await supabase
         .from('invoices')
-        .select('id, status, amount_cents, currency, due_date, created_at, hosted_invoice_url, pdf_url, projects:projects(id, name)')
+        .select('id, invoice_number, status, amount_cents, currency, due_date, created_at, projects:project_id(id, name)')
         .eq('client_id', userId)
         .eq('is_published', true)
         .order('created_at', { ascending: false })
@@ -172,31 +172,13 @@ export default function ClientInvoicesPage() {
 
                     {/* Actions */}
                     <div className="flex flex-col gap-2 shrink-0">
-                      {inv.hosted_invoice_url ? (
-                        <button
-                          onClick={() => window.open(inv.hosted_invoice_url!, '_blank', 'noreferrer')}
-                          className="text-xs font-semibold px-4 py-2 rounded-xl text-white transition hover:opacity-90"
-                          style={{ background: (inv.status ?? '').toLowerCase() === 'paid' ? '#1A3428' : '#F04D3D' }}
-                        >
-                          {(inv.status ?? '').toLowerCase() === 'paid' ? 'View' : 'Pay Now'}
-                        </button>
-                      ) : (
-                        <button
-                          disabled
-                          className="text-xs font-semibold px-4 py-2 rounded-xl text-white opacity-40 cursor-not-allowed"
-                          style={{ background: '#999' }}
-                        >
-                          View
-                        </button>
-                      )}
-                      {inv.pdf_url && (
-                        <button
-                          onClick={() => window.open(inv.pdf_url!, '_blank', 'noreferrer')}
-                          className="text-xs font-medium px-4 py-2 rounded-xl border border-neutral-200 text-neutral-600 hover:border-neutral-400 transition"
-                        >
-                          PDF
-                        </button>
-                      )}
+                      <Link
+                        href={`/dashboard/client/invoices/${inv.id}`}
+                        className="text-xs font-semibold px-4 py-2 rounded-xl text-white text-center transition hover:opacity-90"
+                        style={{ background: (inv.status ?? '').toLowerCase() === 'paid' ? '#1A3428' : '#F04D3D' }}
+                      >
+                        View
+                      </Link>
                     </div>
                   </div>
                 </div>
