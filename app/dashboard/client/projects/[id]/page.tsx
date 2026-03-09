@@ -125,6 +125,9 @@ export default function ClientProjectPage() {
   // Deliverable updating
   const [updatingDelivId, setUpdatingDelivId] = useState<string | null>(null)
 
+  // Accordion state for All Phases
+  const [expandedPhase, setExpandedPhase] = useState<string | null>(null)
+
   // ─── Load ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const tab = searchParams.get('tab') as typeof activeTab | null
@@ -443,30 +446,90 @@ export default function ClientProjectPage() {
               </div>
             )}
 
-            {/* All Phases */}
-            {stepsSorted.length > 1 && (
-              <div className="bg-white border border-neutral-200 rounded-2xl p-5">
-                <h3 className="font-bold text-neutral-900 mb-4">All Phases</h3>
-                <div className="space-y-3">
+            {/* All Phases — Accordion */}
+            {stepsSorted.length > 0 && (
+              <div className="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+                <div className="px-5 pt-5 pb-3">
+                  <h3 className="font-bold text-neutral-900">All Phases</h3>
+                  <p className="text-xs text-neutral-400 mt-0.5">Tap any phase to see what's involved.</p>
+                </div>
+                <div className="divide-y divide-neutral-100">
                   {stepsSorted.map((step, i) => {
                     const tasks = step.project_step_tasks
                     const allDone = tasks.length > 0 && tasks.every((t) => t.is_done)
                     const isActive = step.id === currentStep?.id
+                    const isExpanded = expandedPhase === step.id
                     const stepDone = tasks.filter((t) => t.is_done).length
+
                     return (
-                      <div key={step.id} className="flex items-center gap-4">
-                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-                          style={{ background: allDone ? '#1A342820' : isActive ? '#F04D3D' : '#f5f5f5', color: allDone ? '#1A3428' : isActive ? '#fff' : '#bbb' }}>
-                          {allDone ? '✓' : String(i + 1).padStart(2, '0')}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-sm font-semibold ${isActive ? 'text-neutral-900' : allDone ? 'text-neutral-500' : 'text-neutral-400'}`}>
-                            {step.title}
-                          </p>
-                          {tasks.length > 0 && <p className="text-xs text-neutral-400">{stepDone}/{tasks.length} tasks</p>}
-                        </div>
-                        {isActive && (
-                          <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: '#F04D3D15', color: '#F04D3D' }}>Active</span>
+                      <div key={step.id}>
+                        <button
+                          onClick={() => setExpandedPhase(isExpanded ? null : step.id)}
+                          className="w-full flex items-center gap-4 px-5 py-4 hover:bg-neutral-50 transition text-left"
+                        >
+                          {/* Phase number dot */}
+                          <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
+                            style={{
+                              background: allDone ? '#1A342815' : isActive ? '#F04D3D' : '#f3f3f3',
+                              color: allDone ? '#1A3428' : isActive ? '#fff' : '#ccc'
+                            }}>
+                            {allDone ? '✓' : String(i + 1).padStart(2, '0')}
+                          </div>
+
+                          {/* Title + subtitle */}
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-semibold leading-snug ${
+                              isActive ? 'text-neutral-900' : allDone ? 'text-neutral-500' : 'text-neutral-400'
+                            }`}>{step.title}</p>
+                            {!isExpanded && (
+                              <p className="text-xs text-neutral-400 mt-0.5">
+                                {allDone ? 'Complete' : isActive ? `${stepDone}/${tasks.length} tasks in progress` : 'Coming up'}
+                              </p>
+                            )}
+                          </div>
+
+                          {/* Right side: Active badge + chevron */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            {isActive && (
+                              <span className="text-xs font-semibold px-2 py-0.5 rounded-full" style={{ background: '#F04D3D15', color: '#F04D3D' }}>Active</span>
+                            )}
+                            <span className="text-neutral-300 text-xs transition-transform" style={{ display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>▾</span>
+                          </div>
+                        </button>
+
+                        {/* Expanded body */}
+                        {isExpanded && (
+                          <div className="px-5 pb-5 pt-0">
+                            <div className="ml-12 space-y-3">
+                              {/* Description — Riley's published update, or a sensible default */}
+                              <p className="text-sm text-neutral-600 leading-relaxed">
+                                {step.client_description ||
+                                  (isActive
+                                    ? 'This phase is currently in progress. Riley will share a detailed update here shortly.'
+                                    : allDone
+                                      ? 'This phase has been completed.'
+                                      : 'This phase is coming up. Riley will share more details as your project progresses.'
+                                  )}
+                              </p>
+
+                              {/* Task progress bar (visible if there are tasks) */}
+                              {tasks.length > 0 && (
+                                <div>
+                                  <div className="flex items-center justify-between text-xs text-neutral-400 mb-1">
+                                    <span>Progress</span>
+                                    <span>{stepDone}/{tasks.length}</span>
+                                  </div>
+                                  <div className="w-full rounded-full h-1.5" style={{ background: '#f3f3f3' }}>
+                                    <div className="h-1.5 rounded-full transition-all"
+                                      style={{
+                                        width: `${tasks.length === 0 ? 0 : Math.round((stepDone / tasks.length) * 100)}%`,
+                                        background: allDone ? '#7EC8A0' : isActive ? '#F04D3D' : '#ddd'
+                                      }} />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         )}
                       </div>
                     )

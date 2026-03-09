@@ -31,8 +31,13 @@ type InterviewNote = {
 }
 type GapMap = { id: string; title: string; status: string; created_at: string }
 type ClientDeliverable = {
-  id: string; project_id: string; project_step_id: string
-  title: string; description: string | null; is_done: boolean; sort_order: number
+id: string; project_id: string; project_step_id: string
+title: string; description: string | null; is_done: boolean; sort_order: number
+}
+type ClientUpload = {
+  id: string; project_id: string; uploaded_by: string; title: string
+  storage_path: string; file_type: string | null; file_size_bytes: number | null
+  note: string | null; created_at: string
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -72,6 +77,7 @@ export default function ProjectDetailPage() {
   const [interviewQuestions, setInterviewQuestions] = useState<InterviewQuestion[]>([])
   const [linkedGapMaps, setLinkedGapMaps] = useState<GapMap[]>([])
   const [clientDeliverables, setClientDeliverables] = useState<ClientDeliverable[]>([])
+  const [clientUploads, setClientUploads] = useState<ClientUpload[]>([])
   const [loading, setLoading] = useState(true)
 
   // tabs
@@ -148,13 +154,14 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     if (!id) return
     const load = async () => {
-      const [{ data: pData }, { data: docData }, { data: mnData }, { data: inData }, { data: gmData }, { data: delivData }] = await Promise.all([
+      const [{ data: pData }, { data: docData }, { data: mnData }, { data: inData }, { data: gmData }, { data: delivData }, { data: cuData }] = await Promise.all([
         supabase.from('projects').select(`id,name,project_type,client_id,brief_content,leaders,created_at,updated_at,project_steps(id,title,step_order,client_description,project_step_tasks(id,project_id,project_step_id,title,is_done,due_date,created_at,updated_at)),profiles:client_id(business_name)`).eq('id', id).single(),
         supabase.from('project_documents').select('*').eq('project_id', id).order('created_at'),
         supabase.from('meeting_notes').select('*').eq('project_id', id).order('created_at', { ascending: false }),
         supabase.from('interview_notes').select('*').eq('project_id', id),
         supabase.from('gap_maps').select('id,title,status,created_at').eq('project_id', id).order('created_at', { ascending: false }),
         supabase.from('client_deliverables').select('id,project_id,project_step_id,title,description,is_done,sort_order').eq('project_id', id).order('sort_order'),
+        supabase.from('client_uploads').select('id,project_id,uploaded_by,title,storage_path,file_type,file_size_bytes,note,created_at').eq('project_id', id).order('created_at', { ascending: false }),
       ])
 
       if (pData) {
@@ -182,6 +189,7 @@ export default function ProjectDetailPage() {
       setInterviewNotes(inData ?? [])
       setLinkedGapMaps((gmData ?? []) as GapMap[])
       setClientDeliverables((delivData ?? []) as ClientDeliverable[])
+      setClientUploads((cuData ?? []) as ClientUpload[])
       setLoading(false)
     }
     load()
@@ -626,6 +634,80 @@ export default function ProjectDetailPage() {
                         <div className="px-3 py-2">
                           <p className="text-xs font-medium text-neutral-800 line-clamp-1">{d.title}</p>
                           <p className="text-[10px] text-neutral-400 mt-0.5">{fmtDateTime(d.created_at)}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Client Uploads */}
+            <div className="md:col-span-2 bg-white border border-neutral-200 rounded-2xl p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="font-semibold text-neutral-900">Client Uploads</h2>
+                  <p className="text-xs text-neutral-400 mt-0.5">Files and links sent to you by the client.</p>
+                </div>
+                {clientUploads.length > 0 && (
+                  <span className="text-xs text-neutral-400">{clientUploads.length} item{clientUploads.length !== 1 ? 's' : ''}</span>
+                )}
+              </div>
+
+              {clientUploads.length === 0 ? (
+                <p className="text-sm text-neutral-400">No uploads yet — files and links from the client will appear here.</p>
+              ) : (
+                <div className="space-y-2">
+                  {clientUploads.map((upload) => {
+                    const isLink = upload.file_type === 'link'
+                    return (
+                      <div key={upload.id} className="flex items-start gap-3 p-3 border border-neutral-100 rounded-xl hover:border-neutral-200 transition group">
+                        {/* Icon */}
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 text-xs font-bold"
+                          style={{ background: isLink ? '#1A342815' : '#F04D3D10', color: isLink ? '#1A3428' : '#F04D3D' }}>
+                          {isLink ? '↗' : '↑'}
+                        </div>
+
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2">
+                            {isLink ? (
+                              <a href={upload.storage_path} target="_blank" rel="noreferrer"
+                                className="text-sm font-medium text-neutral-800 hover:text-[#F04D3D] truncate underline-offset-2 hover:underline">
+                                {upload.title}
+                              </a>
+                            ) : (
+                              <p className="text-sm font-medium text-neutral-800 truncate">{upload.title}</p>
+                            )}
+                            <span className="shrink-0 text-[10px] px-1.5 py-0.5 rounded font-mono bg-neutral-100 text-neutral-500">
+                              {isLink ? 'LINK' : (upload.file_type?.split('/').pop()?.toUpperCase() ?? 'FILE')}
+                            </span>
+                          </div>
+                          {upload.note && (
+                            <p className="text-xs text-neutral-500 mt-0.5 italic">"{upload.note}"</p>
+                          )}
+                          <div className="flex items-center gap-3 mt-1">
+                            <span className="text-[10px] text-neutral-400">
+                              {new Date(upload.created_at).toLocaleString('en-CA', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                            </span>
+                            {upload.file_size_bytes && (
+                              <span className="text-[10px] text-neutral-400">
+                                {upload.file_size_bytes < 1024 * 1024
+                                  ? `${(upload.file_size_bytes / 1024).toFixed(0)} KB`
+                                  : `${(upload.file_size_bytes / (1024 * 1024)).toFixed(1)} MB`}
+                              </span>
+                            )}
+                            {!isLink && (
+                              <button
+                                onClick={async () => {
+                                  const { data } = await supabase.storage.from('client-uploads').createSignedUrl(upload.storage_path, 120)
+                                  if (data?.signedUrl) window.open(data.signedUrl, '_blank', 'noreferrer')
+                                }}
+                                className="text-[10px] text-neutral-400 hover:text-[#F04D3D] underline transition">
+                                Open ↗
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     )
