@@ -249,7 +249,7 @@ export default function ClientInvoiceDetailPage() {
         )}
 
         {/* ── Payment form ── */}
-        {isPayable && !showPayForm && (
+        {isPayable && (
           <div className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-4">
             <div>
               <h2 className="font-bold text-neutral-900 text-lg">Ready to pay?</h2>
@@ -257,9 +257,7 @@ export default function ClientInvoiceDetailPage() {
                 {fmtMoney(total)} due {invoice.due_date ? `by ${fmtDate(invoice.due_date)}` : 'now'}.
               </p>
             </div>
-            {paymentError && (
-              <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-4 py-2">{paymentError}</p>
-            )}
+            {/* STRIPE CARD FORM — commented out until fully live
             <button
               onClick={initializePayment}
               disabled={loadingPayment}
@@ -268,18 +266,20 @@ export default function ClientInvoiceDetailPage() {
             >
               {loadingPayment ? 'Loading…' : `Pay ${fmtMoney(total)} →`}
             </button>
+            */}
             <div className="flex items-start gap-3 bg-neutral-50 border border-neutral-200 rounded-xl px-4 py-3">
               <span className="text-base mt-0.5">💸</span>
               <div>
-                <p className="text-xs font-semibold text-neutral-700">Prefer to pay by e-transfer?</p>
+                <p className="text-xs font-semibold text-neutral-700">Online payment services are temporarily down</p>
                 <p className="text-xs text-neutral-500 mt-0.5">
-                  Send to <span className="font-medium text-neutral-700">rileymelinaschmitz@gmail.com</span> with your invoice number in the message. Once received, your invoice will be marked as paid.
+                  Please send your e-transfer to <span className="font-medium text-neutral-700">rileymelinaschmitz@gmail.com</span> with your invoice number in the message. Your invoice will be marked as paid once received — sorry for the inconvenience!
                 </p>
               </div>
             </div>
           </div>
         )}
 
+        {/* STRIPE ELEMENTS FORM — commented out until fully live
         {isPayable && showPayForm && clientSecret && (
           <div className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-4">
             <div className="flex items-center justify-between">
@@ -294,6 +294,7 @@ export default function ClientInvoiceDetailPage() {
             </Elements>
           </div>
         )}
+        */
 
         {/* ── Invoice document ── */}
         <div className="bg-white rounded-3xl shadow-sm border border-neutral-200 overflow-hidden">
